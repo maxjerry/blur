@@ -1,16 +1,14 @@
 img,
 video,
-iframe,
 div[style*="url"],
 span[style*="url"],
 a[style*="url"],
 i[style*="url"] {
-  filter: blur(20px) !important;
+  filter: blur(30px) !important;
 }
 
 img:hover,
 video:hover,
-iframe:hover,
 div[style*="url"]:hover,
 span[style*="url"]:hover,
 a[style*="url"]:hover,
