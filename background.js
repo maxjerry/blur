@@ -9,18 +9,57 @@ const BADGE_STATES = {
   OFF: "OFF"
 };
 
-const EXCLUDED_URLS = [
+const DEFAULT_EXCLUDED_URLS = [
   "chrome://",
   "meet.google.com",
   "localhost"
 ];
 
+const STORAGE_KEYS = {
+  EXCLUDED_URLS: "excludedUrls"
+};
+
+// Storage functions
+const getExcludedUrls = async () => {
+  const result = await chrome.storage.sync.get(STORAGE_KEYS.EXCLUDED_URLS);
+  return result[STORAGE_KEYS.EXCLUDED_URLS] || DEFAULT_EXCLUDED_URLS;
+};
+
+const setExcludedUrls = async (urls) => {
+  await chrome.storage.sync.set({
+    [STORAGE_KEYS.EXCLUDED_URLS]: urls
+  });
+};
+
+const addExcludedUrl = async (url) => {
+  const currentUrls = await getExcludedUrls();
+  const normalizedUrl = url.trim().toLowerCase();
+  
+  if (!currentUrls.includes(normalizedUrl)) {
+    currentUrls.push(normalizedUrl);
+    await setExcludedUrls(currentUrls);
+  }
+  
+  return currentUrls;
+};
+
+const removeExcludedUrl = async (url) => {
+  const currentUrls = await getExcludedUrls();
+  const normalizedUrl = url.trim().toLowerCase();
+  const filteredUrls = currentUrls.filter(excludedUrl => excludedUrl !== normalizedUrl);
+  
+  await setExcludedUrls(filteredUrls);
+  return filteredUrls;
+};
+
 // Utility functions
-const isUrlExcluded = (url, excludeLocalhost = false) => {
+const isUrlExcluded = async (url, excludeLocalhost = false) => {
   if (!url) return true;
   
-  const exclusions = excludeLocalhost ? EXCLUDED_URLS : EXCLUDED_URLS.slice(0, 2);
-  return exclusions.some(excluded => url.includes(excluded));
+  const excludedUrls = await getExcludedUrls();
+  const urlsToCheck = excludeLocalhost ? excludedUrls : excludedUrls.filter(u => u !== "localhost");
+  
+  return urlsToCheck.some(excluded => url.toLowerCase().includes(excluded));
 };
 
 const isLinkedInUrl = (url) => {
@@ -80,39 +119,80 @@ const enableBlurEffect = async (tabId) => {
   await toggleCSS(tabId, CSS_FILES.BLUR, true);  // Then insert
 };
 
-// NEW: Function to handle restored tabs
-const handleRestoredTab = async (tabId, url) => {
-  if (isUrlExcluded(url, true)) return;
+// Message handling for popup communication
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  (async () => {
+    try {
+      switch (request.action) {
+        case 'getExcludedUrls':
+          const urls = await getExcludedUrls();
+          sendResponse({ success: true, urls });
+          break;
+          
+        case 'addExcludedUrl':
+          const updatedUrls = await addExcludedUrl(request.url);
+          sendResponse({ success: true, urls: updatedUrls });
+          break;
+          
+        case 'removeExcludedUrl':
+          const filteredUrls = await removeExcludedUrl(request.url);
+          sendResponse({ success: true, urls: filteredUrls });
+          break;
+          
+        case 'addCurrentUrl':
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tab.url) {
+            const hostname = new URL(tab.url).hostname;
+            const newUrls = await addExcludedUrl(hostname);
+            
+            // Turn off blur for current tab if it's on
+            const badgeText = await chrome.action.getBadgeText({ tabId: tab.id });
+            if (badgeText === BADGE_STATES.ON) {
+              await setBadgeText(tab.id, BADGE_STATES.OFF);
+              await toggleCSS(tab.id, CSS_FILES.BLUR, false);
+            }
+            
+            sendResponse({ success: true, urls: newUrls, addedUrl: hostname });
+          } else {
+            sendResponse({ success: false, error: 'No valid URL found' });
+          }
+          break;
+          
+        default:
+          sendResponse({ success: false, error: 'Unknown action' });
+      }
+    } catch (error) {
+      sendResponse({ success: false, error: error.message });
+    }
+  })();
   
-  // Reset badge state for restored tabs
-  await setBadgeText(tabId, BADGE_STATES.OFF);
-  
-  if (isLinkedInUrl(url)) {
-    await applyLinkedInCSS(tabId);
-  }
-  
-  // Don't automatically enable blur for restored tabs
-  // Let user toggle it manually
-};
+  return true; // Keep message channel open for async response
+});
 
 // Event listeners
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.action.setBadgeText({
     text: BADGE_STATES.OFF
   });
+  
+  // Initialize excluded URLs if not set
+  const existingUrls = await chrome.storage.sync.get(STORAGE_KEYS.EXCLUDED_URLS);
+  if (!existingUrls[STORAGE_KEYS.EXCLUDED_URLS]) {
+    await setExcludedUrls(DEFAULT_EXCLUDED_URLS);
+  }
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === "toggle-blur") {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!isUrlExcluded(tab.url)) {
+    if (!(await isUrlExcluded(tab.url))) {
       await toggleBlurEffect(tab.id);
     }
   }
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
-  if (!isUrlExcluded(tab.url)) {
+  if (!(await isUrlExcluded(tab.url))) {
     await toggleBlurEffect(tab.id);
   }
 });
@@ -120,7 +200,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.tabs.onActivated.addListener(async (tabInfo) => {
   const tab = await chrome.tabs.get(tabInfo.tabId);
   
-  if (isUrlExcluded(tab.url, true)) return;
+  if (await isUrlExcluded(tab.url, true)) return;
   
   if (isLinkedInUrl(tab.url)) {
     await applyLinkedInCSS(tabInfo.tabId);
@@ -134,7 +214,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   
   const tab = await chrome.tabs.get(details.tabId);
   
-  if (isUrlExcluded(tab.url, true)) return;
+  if (await isUrlExcluded(tab.url, true)) return;
   
   if (isLinkedInUrl(tab.url)) {
     await applyLinkedInCSS(details.tabId);
@@ -143,17 +223,12 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   await enableBlurEffect(details.tabId);
 });
 
-// NEW: Handle tab updates (including restored tabs)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  // Only handle when the tab is completely loaded
   if (changeInfo.status === 'complete' && tab.url) {
-    // Check if this might be a restored tab by checking if badge is inconsistent
     const badgeText = await chrome.action.getBadgeText({ tabId });
     
     if (badgeText === BADGE_STATES.ON) {
-      // If badge shows ON but tab was restored, CSS might be missing
-      // Re-apply the CSS to ensure consistency
-      if (!isUrlExcluded(tab.url, true)) {
+      if (!(await isUrlExcluded(tab.url, true))) {
         if (isLinkedInUrl(tab.url)) {
           await applyLinkedInCSS(tabId);
         }
@@ -163,12 +238,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
-// NEW: Handle startup - reset all badge states
 chrome.runtime.onStartup.addListener(async () => {
-  // Reset all tabs' badge states on browser startup
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
-    if (!isUrlExcluded(tab.url, true)) {
+    if (!(await isUrlExcluded(tab.url, true))) {
       await setBadgeText(tab.id, BADGE_STATES.OFF);
     }
   }
