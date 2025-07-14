@@ -38,22 +38,30 @@ const toggleCSS = async (tabId, cssFile, enable) => {
   const target = { tabId };
   const options = { files: [cssFile], target };
   
-  if (enable) {
-    await chrome.scripting.insertCSS(options);
-  } else {
-    await chrome.scripting.removeCSS(options);
+  try {
+    if (enable) {
+      await chrome.scripting.insertCSS(options);
+    } else {
+      await chrome.scripting.removeCSS(options);
+    }
+  } catch (error) {
+    console.log(`CSS operation failed for tab ${tabId}:`, error);
   }
 };
 
 const applyLinkedInCSS = async (tabId) => {
-  await chrome.scripting.removeCSS({
-    files: [CSS_FILES.LINKEDIN],
-    target: { tabId }
-  });
-  await chrome.scripting.insertCSS({
-    files: [CSS_FILES.LINKEDIN],
-    target: { tabId }
-  });
+  try {
+    await chrome.scripting.removeCSS({
+      files: [CSS_FILES.LINKEDIN],
+      target: { tabId }
+    });
+    await chrome.scripting.insertCSS({
+      files: [CSS_FILES.LINKEDIN],
+      target: { tabId }
+    });
+  } catch (error) {
+    console.log(`LinkedIn CSS operation failed for tab ${tabId}:`, error);
+  }
 };
 
 const toggleBlurEffect = async (tabId) => {
@@ -70,6 +78,21 @@ const enableBlurEffect = async (tabId) => {
   await setBadgeText(tabId, BADGE_STATES.ON);
   await toggleCSS(tabId, CSS_FILES.BLUR, false); // Remove first
   await toggleCSS(tabId, CSS_FILES.BLUR, true);  // Then insert
+};
+
+// NEW: Function to handle restored tabs
+const handleRestoredTab = async (tabId, url) => {
+  if (isUrlExcluded(url, true)) return;
+  
+  // Reset badge state for restored tabs
+  await setBadgeText(tabId, BADGE_STATES.OFF);
+  
+  if (isLinkedInUrl(url)) {
+    await applyLinkedInCSS(tabId);
+  }
+  
+  // Don't automatically enable blur for restored tabs
+  // Let user toggle it manually
 };
 
 // Event listeners
@@ -118,4 +141,35 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   }
   
   await enableBlurEffect(details.tabId);
+});
+
+// NEW: Handle tab updates (including restored tabs)
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Only handle when the tab is completely loaded
+  if (changeInfo.status === 'complete' && tab.url) {
+    // Check if this might be a restored tab by checking if badge is inconsistent
+    const badgeText = await chrome.action.getBadgeText({ tabId });
+    
+    if (badgeText === BADGE_STATES.ON) {
+      // If badge shows ON but tab was restored, CSS might be missing
+      // Re-apply the CSS to ensure consistency
+      if (!isUrlExcluded(tab.url, true)) {
+        if (isLinkedInUrl(tab.url)) {
+          await applyLinkedInCSS(tabId);
+        }
+        await enableBlurEffect(tabId);
+      }
+    }
+  }
+});
+
+// NEW: Handle startup - reset all badge states
+chrome.runtime.onStartup.addListener(async () => {
+  // Reset all tabs' badge states on browser startup
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (!isUrlExcluded(tab.url, true)) {
+      await setBadgeText(tab.id, BADGE_STATES.OFF);
+    }
+  }
 });
