@@ -28,5 +28,13 @@
   "host_permissions": [
     "https://*/*",
     "http://*/*"
-  ]
+  ],
+  "commands": {
+    "toggle-blur": {
+      "suggested_key": {
+        "default": "Ctrl+B"
+      },
+      "description": "Toggle blur effect"
+    }
+  }
 }
