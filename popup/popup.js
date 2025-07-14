@@ -131,8 +131,8 @@ class PopupManager {
       this.toggleCurrentSite();
     });
     
-    // Toggle blur button
-    document.getElementById('toggleBlurBtn').addEventListener('click', () => {
+    // Toggle blur switch
+    document.getElementById('toggleBlurSwitch').addEventListener('change', () => {
       this.toggleBlur();
     });
 
@@ -272,14 +272,15 @@ class PopupManager {
     const urlElement = document.getElementById('currentUrl');
     const statusElement = document.getElementById('currentStatus');
     const toggleButton = document.getElementById('toggleCurrentSite');
-    const toggleBlurBtn = document.getElementById('toggleBlurBtn');
+    const toggleBlurSwitch = document.getElementById('toggleBlurSwitch');
+    const toggleBlurLabel = document.getElementById('toggleBlurLabel');
     
     if (!this.currentHostname) {
       urlElement.textContent = 'No valid URL';
       statusElement.textContent = 'N/A';
       statusElement.className = 'status';
       toggleButton.style.display = 'none';
-      toggleBlurBtn.style.display = 'none';
+      if (toggleBlurSwitch) toggleBlurSwitch.parentElement.style.display = 'none';
       return;
     }
     
@@ -294,15 +295,21 @@ class PopupManager {
       statusElement.className = 'status excluded';
       toggleButton.textContent = 'Remove from Excluded';
       toggleButton.className = 'btn btn-danger btn-small';
-      toggleBlurBtn.style.display = 'block';
-      toggleBlurBtn.textContent = 'Enable Blur';
+      if (toggleBlurSwitch) {
+        toggleBlurSwitch.parentElement.style.display = 'flex';
+        toggleBlurSwitch.checked = false;
+        if (toggleBlurLabel) toggleBlurLabel.textContent = 'Blur (Excluded)';
+      }
     } else {
       statusElement.textContent = `Blur: ${this.blurStatus}`;
       statusElement.className = this.blurStatus === 'ON' ? 'status active' : 'status';
       toggleButton.textContent = 'Add to Excluded';
       toggleButton.className = 'btn btn-secondary btn-small';
-      toggleBlurBtn.style.display = 'block';
-      toggleBlurBtn.textContent = this.blurStatus === 'ON' ? 'Disable Blur' : 'Enable Blur';
+      if (toggleBlurSwitch) {
+        toggleBlurSwitch.parentElement.style.display = 'flex';
+        toggleBlurSwitch.checked = this.blurStatus === 'ON';
+        if (toggleBlurLabel) toggleBlurLabel.textContent = this.blurStatus === 'ON'? 'Blur Enabled' : 'Blur Disabled';
+      }
     }
     
     toggleButton.style.display = 'block';
