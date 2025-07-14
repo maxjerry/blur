@@ -1,14 +1,14 @@
-const DEFAULT_EXCLUDED_URLS = [
-  "chrome://",
-  "meet.google.com",
-  "localhost"
-];
-
 class PopupManager {
   constructor() {
     this.currentUrl = '';
     this.currentHostname = '';
-    this.excludedUrls = [];
+    this.excludedUrls = [
+      "chrome://",
+      "meet.google.com",
+      "localhost"
+    ];
+    this.currentTabId = null;
+    this.blurStatus = 'OFF';
     
     this.init();
   }
@@ -17,6 +17,7 @@ class PopupManager {
     await this.loadCurrentTab();
     await this.loadExcludedUrls();
     this.setupEventListeners();
+    this.setupMessageListener();
     this.render();
   }
   
@@ -25,8 +26,73 @@ class PopupManager {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       this.currentUrl = tab.url || '';
       this.currentHostname = this.currentUrl ? new URL(this.currentUrl).hostname : '';
+      this.currentTabId = tab.id;
+      
+      // Get current blur status
+      if (this.currentTabId) {
+        const badgeText = await chrome.action.getBadgeText({ tabId: this.currentTabId });
+        this.blurStatus = badgeText || 'OFF';
+      }
     } catch (error) {
       console.error('Failed to load current tab:', error);
+    }
+  }
+  
+  async toggleBlur() {
+    if (!this.currentTabId) {
+      this.showMessage('No active tab found', 'error');
+      return;
+    }
+    
+    const isExcluded = this.excludedUrls.some(url => 
+      this.currentHostname.includes(url) || url.includes(this.currentHostname)
+    );
+    
+    if (isExcluded) {
+      // Remove from excluded list and enable blur
+      const matchingUrl = this.excludedUrls.find(url => 
+        this.currentHostname.includes(url) || url.includes(this.currentHostname)
+      );
+      if (matchingUrl) {
+        await this.removeUrl(matchingUrl);
+        // removeUrl will handle enabling blur automatically
+      }
+      return;
+    }
+    
+    try {
+      const response = await this.sendMessage({ 
+        action: 'toggleBlur',
+        tabId: this.currentTabId
+      });
+      
+      if (response.success) {
+        this.blurStatus = response.newStatus;
+        this.showMessage(`Blur ${this.blurStatus === 'ON' ? 'enabled' : 'disabled'}`, 'success');
+        this.render();
+      } else {
+        this.showMessage(response.error || 'Failed to toggle blur', 'error');
+      }
+    } catch (error) {
+      this.showMessage('Failed to toggle blur', 'error');
+    }
+  }
+  
+  async enableBlurForCurrentSite() {
+    if (!this.currentTabId) return;
+    
+    try {
+      const response = await this.sendMessage({ 
+        action: 'enableBlur',
+        tabId: this.currentTabId
+      });
+      
+      if (response.success) {
+        this.blurStatus = 'ON';
+        this.showMessage('Blur automatically enabled', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to enable blur automatically:', error);
     }
   }
   
@@ -63,6 +129,37 @@ class PopupManager {
     // Toggle current site
     document.getElementById('toggleCurrentSite').addEventListener('click', () => {
       this.toggleCurrentSite();
+    });
+    
+    // Toggle blur button
+    document.getElementById('toggleBlurBtn').addEventListener('click', () => {
+      this.toggleBlur();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('removeExcludedUrlBtn')) {
+        const url = e.target.dataset.url;
+        this.removeUrl(url);
+      }
+    });
+  }
+  
+  setupMessageListener() {
+    // Listen for blur state changes from background script
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.tabId === this.currentTabId) {
+        if (request.action === 'blurStateChanged') {
+          this.blurStatus = request.newStatus;
+          this.render();
+        } else if (request.action === 'siteRemovedFromExclusion') {
+          // Site was removed from exclusion list
+          this.excludedUrls = this.excludedUrls.filter(url => url !== request.removedUrl);
+          this.blurStatus = 'ON';
+          this.showMessage(`Removed "${request.removedUrl}" from excluded URLs and enabled blur`, 'success');
+          this.render();
+        }
+        sendResponse({ success: true });
+      }
     });
   }
   
@@ -104,6 +201,12 @@ class PopupManager {
       if (response.success) {
         this.excludedUrls = response.urls;
         this.showMessage(`Removed "${url}" from excluded URLs`, 'success');
+        
+        // If current site was removed from excluded, automatically enable blur
+        if (this.currentHostname && (this.currentHostname.includes(url) || url.includes(this.currentHostname))) {
+          await this.enableBlurForCurrentSite();
+        }
+        
         this.render();
       } else {
         this.showMessage(response.error || 'Failed to remove URL', 'error');
@@ -130,6 +233,7 @@ class PopupManager {
       );
       if (matchingUrl) {
         await this.removeUrl(matchingUrl);
+        // removeUrl will handle enabling blur automatically
       }
     } else {
       // Add current hostname
@@ -168,12 +272,14 @@ class PopupManager {
     const urlElement = document.getElementById('currentUrl');
     const statusElement = document.getElementById('currentStatus');
     const toggleButton = document.getElementById('toggleCurrentSite');
+    const toggleBlurBtn = document.getElementById('toggleBlurBtn');
     
     if (!this.currentHostname) {
       urlElement.textContent = 'No valid URL';
       statusElement.textContent = 'N/A';
       statusElement.className = 'status';
       toggleButton.style.display = 'none';
+      toggleBlurBtn.style.display = 'none';
       return;
     }
     
@@ -188,11 +294,15 @@ class PopupManager {
       statusElement.className = 'status excluded';
       toggleButton.textContent = 'Remove from Excluded';
       toggleButton.className = 'btn btn-danger btn-small';
+      toggleBlurBtn.style.display = 'block';
+      toggleBlurBtn.textContent = 'Enable Blur';
     } else {
-      statusElement.textContent = 'Active';
-      statusElement.className = 'status active';
+      statusElement.textContent = `Blur: ${this.blurStatus}`;
+      statusElement.className = this.blurStatus === 'ON' ? 'status active' : 'status';
       toggleButton.textContent = 'Add to Excluded';
       toggleButton.className = 'btn btn-secondary btn-small';
+      toggleBlurBtn.style.display = 'block';
+      toggleBlurBtn.textContent = this.blurStatus === 'ON' ? 'Disable Blur' : 'Enable Blur';
     }
     
     toggleButton.style.display = 'block';
@@ -207,14 +317,12 @@ class PopupManager {
     }
     
     listElement.innerHTML = this.excludedUrls.map(url => {
-      const isDefault = DEFAULT_EXCLUDED_URLS.includes(url);
       return `
         <div class="excluded-item">
           <div class="excluded-url">
-            ${isDefault ? '<span class="default-tag">DEFAULT</span>' : ''}
             ${this.escapeHtml(url)}
           </div>
-          ${!isDefault ? `<button class="btn btn-danger btn-small" onclick="popupManager.removeUrl('${this.escapeHtml(url)}')">Remove</button>` : ''}
+          <button class="btn btn-danger btn-small removeExcludedUrlBtn" data-url="${this.escapeHtml(url)}">Remove</button>
         </div>
       `;
     }).join('');

@@ -158,6 +158,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
           break;
           
+        case 'toggleBlur':
+          if (request.tabId) {
+            const newStatus = await toggleBlurEffect(request.tabId);
+            sendResponse({ success: true, newStatus });
+          } else {
+            sendResponse({ success: false, error: 'No tab ID provided' });
+          }
+          break;
+          
+        case 'enableBlur':
+          if (request.tabId) {
+            await enableBlurEffect(request.tabId);
+            sendResponse({ success: true });
+          } else {
+            sendResponse({ success: false, error: 'No tab ID provided' });
+          }
+          break;
+          
         default:
           sendResponse({ success: false, error: 'Unknown action' });
       }
@@ -185,8 +203,36 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.commands.onCommand.addListener(async (command) => {
   if (command === "toggle-blur") {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!(await isUrlExcluded(tab.url))) {
-      await toggleBlurEffect(tab.id);
+    
+    // Check if the site is excluded
+    const isExcluded = await isUrlExcluded(tab.url);
+    
+    if (isExcluded) {
+      // Remove from excluded list and enable blur
+      const hostname = new URL(tab.url).hostname;
+      await removeExcludedUrl(hostname);
+      await enableBlurEffect(tab.id);
+      
+      // Notify any open popups about the exclusion change
+      chrome.runtime.sendMessage({
+        action: 'siteRemovedFromExclusion',
+        tabId: tab.id,
+        removedUrl: hostname
+      }).catch(() => {
+        // Ignore errors if no popup is open
+      });
+    } else {
+      // Normal toggle behavior
+      const newStatus = await toggleBlurEffect(tab.id);
+      
+      // Notify any open popups about the blur state change
+      chrome.runtime.sendMessage({
+        action: 'blurStateChanged',
+        tabId: tab.id,
+        newStatus: newStatus
+      }).catch(() => {
+        // Ignore errors if no popup is open
+      });
     }
   }
 });
