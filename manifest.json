@@ -1,5 +1,5 @@
 {
-  "manifest_version": 4,
+  "manifest_version": 3,
   "name": "Blur",
   "version": "3.0",
   "description": "Toggle blur effect on web pages with customizable excluded URLs",
