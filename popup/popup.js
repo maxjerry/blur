@@ -9,6 +9,7 @@ class PopupManager {
     ];
     this.currentTabId = null;
     this.blurStatus = 'OFF';
+    this.blurIntensity = 50;
     
     this.init();
   }
@@ -16,6 +17,7 @@ class PopupManager {
   async init() {
     await this.loadCurrentTab();
     await this.loadExcludedUrls();
+    await this.loadBlurIntensity();
     this.setupEventListeners();
     this.setupMessageListener();
     this.render();
@@ -35,6 +37,30 @@ class PopupManager {
       }
     } catch (error) {
       console.error('Failed to load current tab:', error);
+    }
+  }
+  async setBlurIntensity(intensity) {
+    if (!this.currentTabId) {
+      this.showMessage('No active tab found', 'error');
+      return;
+    }
+    
+    try {
+      const response = await this.sendMessage({ 
+        action: 'setBlurIntensity',
+        tabId: this.currentTabId,
+        intensity: intensity
+      });
+      
+      if (response.success) {
+        this.blurStatus = 'ON';
+        this.blurIntensity = intensity;
+        this.render();
+      } else {
+        this.showMessage(response.error || 'Failed to set blur intensity', 'error');
+      }
+    } catch (error) {
+      this.showMessage('Failed to set blur intensity', 'error');
     }
   }
   
@@ -106,6 +132,17 @@ class PopupManager {
       console.error('Failed to load excluded URLs:', error);
     }
   }
+
+  async loadBlurIntensity() {
+    try {
+      const response = await this.sendMessage({ action: 'getBlurIntensity' });
+      if (response.success) {
+        this.blurIntensity = response.intensity;
+      }
+    } catch (error) {
+      console.error('Failed to load Blur Intensity:', error);
+    }
+  }
   
   async sendMessage(message) {
     return new Promise((resolve) => {
@@ -135,6 +172,12 @@ class PopupManager {
     document.getElementById('toggleBlurSwitch').addEventListener('change', () => {
       this.toggleBlur();
     });
+
+    // Blur intensity slider
+    document.getElementById('intensitySlider').addEventListener('input', (e) => {
+      this.setBlurIntensity(e.target.value)
+    });
+
 
     document.addEventListener('click', (e) => {
       if (e.target.classList.contains('removeExcludedUrlBtn')) {
@@ -266,6 +309,7 @@ class PopupManager {
   render() {
     this.renderCurrentSite();
     this.renderExcludedList();
+    this.renderBlurIntensity();
   }
   
   renderCurrentSite() {
@@ -333,6 +377,16 @@ class PopupManager {
         </div>
       `;
     }).join('');
+  }
+
+  renderBlurIntensity(){
+    const intensityValueElement = document.getElementById('intensityValue');
+    const previewElement = document.getElementById('previewText');
+    const intensitySliderElement = document.getElementById('intensitySlider');
+    
+    intensityValueElement.innerHTML = `${this.blurIntensity}px`;
+    previewElement.style.filter = `blur(${this.blurIntensity}px)`;
+    intensitySliderElement.value = this.blurIntensity;
   }
   
   escapeHtml(text) {

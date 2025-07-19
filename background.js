@@ -2,19 +2,28 @@
 const CSS_FILES = { BLUR: "blur.css" };
 const BADGE_STATES = { ON: "ON", OFF: "OFF" };
 const DEFAULT_EXCLUDED_URLS = ["chrome://", "meet.google.com", "localhost"];
-const STORAGE_KEYS = { EXCLUDED_URLS: "excludedUrls" };
+const STORAGE_KEYS = { EXCLUDED_URLS: "excludedUrls", BLUR_INTENSITY: "blurIntensity" };
+const DEFAULT_BLUR_INTENSITY = 50;
 
 // --- Storage Management ---
-const getExcludedUrls = async () => {
+const loadExcludedUrls = async () => {
   const result = await chrome.storage.sync.get(STORAGE_KEYS.EXCLUDED_URLS);
   return result[STORAGE_KEYS.EXCLUDED_URLS] || DEFAULT_EXCLUDED_URLS;
 };
 
-const setExcludedUrls = (urls) =>
+const saveExcludedUrls = (urls) =>
   chrome.storage.sync.set({ [STORAGE_KEYS.EXCLUDED_URLS]: urls });
 
+const loadBlurIntensity = async () => {
+  const result = await chrome.storage.sync.get(STORAGE_KEYS.BLUR_INTENSITY);
+  return result[STORAGE_KEYS.BLUR_INTENSITY] || DEFAULT_BLUR_INTENSITY;
+};
+
+const saveBlurIntensity = (intensity) =>
+  chrome.storage.sync.set({ [STORAGE_KEYS.BLUR_INTENSITY]: intensity });
+
 const updateExcludedUrls = async (url, action) => {
-  const urls = await getExcludedUrls();
+  const urls = await loadExcludedUrls();
   const normalizedUrl = url.trim().toLowerCase();
   let updated;
 
@@ -26,13 +35,13 @@ const updateExcludedUrls = async (url, action) => {
     updated = urls;
   }
 
-  await setExcludedUrls(updated);
+  await saveExcludedUrls(updated);
   return updated;
 };
 
 const isUrlExcluded = async (url, excludeLocalhost = false) => {
   if (!url) return true;
-  const urls = await getExcludedUrls();
+  const urls = await loadExcludedUrls();
   const list = excludeLocalhost ? urls : urls.filter((u) => u !== "localhost");
   return list.some((u) => url.toLowerCase().includes(u));
 };
@@ -44,7 +53,7 @@ const setBadgeText = (tabId, text) =>
 const setBlurIntensity = (tabId, intensity) =>
   chrome.scripting.executeScript({
     target: { tabId },
-    func: (val) => document.documentElement.style.setProperty("--blur-intensity", val),
+    func: (val) => document.documentElement.style.setProperty("--blur-intensity", `${val}px`),
     args: [intensity],
   });
 
@@ -67,11 +76,12 @@ const injectCSS = async (tabId) => {
 };
 
 const applyBlurEffect = async (tabId, enable) => {
+  const blurIntensity = await loadBlurIntensity();
   if (enable) {
     await injectCSS(tabId);
-    await setBlurIntensity(tabId, "30px");
+    await setBlurIntensity(tabId, blurIntensity);
   } else {
-    await setBlurIntensity(tabId, "0px");
+    await setBlurIntensity(tabId, 0);
   }
 };
 
@@ -84,9 +94,10 @@ const toggleBlurEffect = async (tabId) => {
 };
 
 const enableBlurEffect = async (tabId) => {
+  const blurIntensity = await loadBlurIntensity();
   await setBadgeText(tabId, BADGE_STATES.ON);
   await injectCSS(tabId);
-  await setBlurIntensity(tabId, "30px");
+  await setBlurIntensity(tabId, blurIntensity);
 };
 
 // --- Message Listener ---
@@ -95,7 +106,7 @@ chrome.runtime.onMessage.addListener((req, _, sendRes) => {
     try {
       switch (req.action) {
         case "getExcludedUrls":
-          return sendRes({ success: true, urls: await getExcludedUrls() });
+          return sendRes({ success: true, urls: await loadExcludedUrls() });
         case "addExcludedUrl":
           return sendRes({ success: true, urls: await updateExcludedUrls(req.url, "add") });
         case "removeExcludedUrl":
@@ -123,6 +134,18 @@ chrome.runtime.onMessage.addListener((req, _, sendRes) => {
           if (!req.tabId) return sendRes({ success: false, error: "No tab ID provided" });
           await enableBlurEffect(req.tabId);
           return sendRes({ success: true });
+        case 'getBlurIntensity':
+          const intensity = await loadBlurIntensity();
+          return sendRes({ success: true, intensity });
+        case 'setBlurIntensity':
+          saveBlurIntensity(req.intensity);
+          const tabs = await chrome.tabs.query({});
+          for (const tab of tabs) {
+            if (!(await isUrlExcluded(tab.url, true))) {
+              await setBlurIntensity(tab.id, req.intensity);
+            }
+          }
+          return sendRes({ success: true });
         default:
           return sendRes({ success: false, error: "Unknown action" });
       }
@@ -137,7 +160,7 @@ chrome.runtime.onMessage.addListener((req, _, sendRes) => {
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.action.setBadgeText({ text: BADGE_STATES.OFF });
   const existing = await chrome.storage.sync.get(STORAGE_KEYS.EXCLUDED_URLS);
-  if (!existing[STORAGE_KEYS.EXCLUDED_URLS]) await setExcludedUrls(DEFAULT_EXCLUDED_URLS);
+  if (!existing[STORAGE_KEYS.EXCLUDED_URLS]) await saveExcludedUrls(DEFAULT_EXCLUDED_URLS);
 });
 
 chrome.runtime.onStartup.addListener(async () => {

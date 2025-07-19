@@ -20,6 +20,25 @@
   </div>
 
   <div class="section">
+    <h2>Blur Intensity</h2>
+    <div class="blur-intensity-control">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+        <span>Blur Amount:</span>
+        <span class="intensity-value" id="intensityValue">30px</span>
+      </div>
+      <input type="range" class="intensity-slider" id="intensitySlider" min="10" max="200" value="50" step="2">
+      <div class="intensity-labels">
+        <span>Light (10px)</span>
+        <span>Heavy (200px)</span>
+      </div>
+      <div class="blur-preview">
+        <span>Preview Image</span>
+        <span class="blur-preview-image" id="previewText"><img src="./Google.png" alt="Preview Image"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
     <h2>Current Site</h2>
     <div class="current-site">
       <div class="site-info">
