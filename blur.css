@@ -4,7 +4,8 @@ div[style*="url"],
 span[style*="url"],
 a[style*="url"],
 i[style*="url"] {
-  filter: blur(30px) !important;
+  filter: blur(var(--blur-intensity)) !important;
+  transition: filter 0.3s ease !important;
 }
 
 img:hover,
@@ -14,4 +15,5 @@ span[style*="url"]:hover,
 a[style*="url"]:hover,
 i[style*="url"]:hover {
   filter: blur(0px) !important;
+  transition: filter 0.3s ease !important;
 }
