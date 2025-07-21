@@ -260,15 +260,28 @@ chrome.commands.onCommand.addListener(async (cmd) => {
   }
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
-  const isExcluded = await isUrlExcluded(tab.url);
-  if (tab.url && !isExcluded) {
-    await toggleBlurEffect(tab.id);
-  }
-});
-
 const shouldProcess = (url) =>
   url && (url.startsWith("http") || url.startsWith("https"));
+
+
+chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId, url }) => {
+  try {
+    const isExcluded = await isUrlExcluded(url);
+    if (shouldProcess(url)) {
+      if (!isExcluded) {
+        if (frameId == 0) {
+          await enableBlurEffect(tabId);
+        }
+        else{
+          await enableFrameBlurEffect(tabId, frameId);
+        }
+      } else {
+        await disableBlurEffect(tabId);
+      }
+    }
+  } catch (error) {
+  }
+});
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const tab = await chrome.tabs.get(tabId);
@@ -282,40 +295,14 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   }
 });
 
-chrome.webNavigation.onCommitted.addListener(async ({ tabId }) => {
-  const tab = await chrome.tabs.get(tabId);
-  const isExcluded = await isUrlExcluded(tab.url);
-  if (shouldProcess(tab.url)) {
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading" && shouldProcess(tab.url)) {
+    const isExcluded = await isUrlExcluded(tab.url);
     if (!isExcluded) {
       await enableBlurEffect(tabId);
     } else {
       await disableBlurEffect(tabId);
-    }
-  }
-});
-
-chrome.webNavigation.onCompleted.addListener(async (details) => {
-  if (details.frameId !== 0) {
-    const tab = await chrome.tabs.get(details.tabId);
-    const isExcluded = await isUrlExcluded(tab.url);
-    if (shouldProcess(tab.url)) {
-      if (!isExcluded) {
-        enableFrameBlurEffect(details.tabId, details.frameId);
-      }
-    }
-  }
-});
-
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.url) {
-    const badge = await chrome.action.getBadgeText({ tabId });
-    const isExcluded = await isUrlExcluded(tab.url);
-    if (badge === BADGE_STATES.ON) {
-      if (!isExcluded) {
-        await enableBlurEffect(tabId);
-      } else {
-        await disableBlurEffect(tabId);
-      }
     }
   }
 });
