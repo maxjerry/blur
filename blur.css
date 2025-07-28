@@ -16,3 +16,7 @@ i[style*="url"]:hover {
   filter: blur(0px) !important;
   transition: filter 0.3s ease !important;
 }
+
+.has-background-image {
+  filter: blur(var(--blur-intensity)) !important;
+}

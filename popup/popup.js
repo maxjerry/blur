@@ -5,6 +5,7 @@ class PopupManager {
     this.excludedUrls = ["chrome://", "meet.google.com", "localhost"];
     this.currentTabId = null;
     this.blurStatus = "OFF";
+    this.backgroundBlurStatus = true;
     this.blurIntensity = 50;
 
     this.init();
@@ -116,6 +117,37 @@ class PopupManager {
     }
   }
 
+  async toggleBackgroundBlur() {
+    if (!this.currentTabId) {
+      this.showMessage("No active tab found", "error");
+      return;
+    }
+
+    try {
+      const response = await this.sendMessage({
+        action: "toggleBackgroundBlur",
+        tabId: this.currentTabId,
+        state: !this.backgroundBlurStatus,
+      });
+      if (response.success) {
+        this.backgroundBlurStatus = response.newStatus;
+        this.showMessage(
+          `Background Blur ${
+            this.backgroundBlurStatus ? "enabled" : "disabled"
+          }`,
+          "success"
+        );
+        this.render();
+      } else {
+        this.showMessage(
+          response.error || "Failed to toggle background blur",
+          "error"
+        );
+      }
+    } catch (error) {
+      this.showMessage("Failed to toggle background blur", "error");
+    }
+  }
   async enableBlurForCurrentSite() {
     if (!this.currentTabId) return;
 
@@ -188,6 +220,12 @@ class PopupManager {
       .addEventListener("change", () => {
         this.toggleBlur();
       });
+    // Toggle background blur switch
+    document
+      .getElementById("toggleBackgroundBlurSwitch")
+      .addEventListener("change", () => {
+        this.toggleBackgroundBlur();
+      });
 
     // Blur intensity slider
     document
@@ -217,6 +255,7 @@ class PopupManager {
             (url) => url !== request.removedUrl
           );
           this.blurStatus = "ON";
+          this.backgroundBlurStatus = request.backgroundBlurStatus;
           this.showMessage(
             `Removed "${request.removedUrl}" from excluded URLs and enabled blur`,
             "success"
@@ -346,6 +385,7 @@ class PopupManager {
     this.renderCurrentSite();
     this.renderExcludedList();
     this.renderBlurIntensity();
+    this.renderBackgroundBlur();
   }
 
   renderCurrentSite() {
@@ -353,6 +393,9 @@ class PopupManager {
     const statusElement = document.getElementById("currentStatus");
     const toggleButton = document.getElementById("toggleCurrentSite");
     const toggleBlurSwitch = document.getElementById("toggleBlurSwitch");
+    const toggleBackgroundBlurSwitch = document.getElementById(
+      "toggleBackgroundBlurSwitch"
+    );
     const toggleBlurLabel = document.getElementById("toggleBlurLabel");
 
     if (!this.currentHostname) {
@@ -380,6 +423,8 @@ class PopupManager {
       if (toggleBlurSwitch) {
         toggleBlurSwitch.parentElement.style.display = "flex";
         toggleBlurSwitch.checked = false;
+        toggleBackgroundBlurSwitch.checked = false;
+        toggleBackgroundBlurSwitch.parentElement.style.display = "none";
         if (toggleBlurLabel) toggleBlurLabel.textContent = "Blur (Excluded)";
       }
     } else {
@@ -394,6 +439,12 @@ class PopupManager {
         if (toggleBlurLabel)
           toggleBlurLabel.textContent =
             this.blurStatus === "ON" ? "Blur Enabled" : "Blur Disabled";
+        toggleBackgroundBlurSwitch.parentElement.style.display = "flex";
+        if (this.blurStatus === "OFF") {
+          toggleBackgroundBlurSwitch.parentElement.style.display = "none";
+        } else {
+          toggleBackgroundBlurSwitch.parentElement.style.display = "flex";
+        }
       }
     }
 
@@ -443,6 +494,21 @@ class PopupManager {
     intensityContainerElement.style.display = isCurrentlyExcluded
       ? "none"
       : "block";
+  }
+
+  renderBackgroundBlur() {
+    const toggleBackgroundBlurSwitch = document.getElementById(
+      "toggleBackgroundBlurSwitch"
+    );
+    toggleBackgroundBlurSwitch.checked = this.backgroundBlurStatus;
+    const toggleBackgroundBlurLabel = document.getElementById("toggleBackgroundBlurLabel");
+    if(this.backgroundBlurStatus)
+    {
+      toggleBackgroundBlurLabel.textContent = "Background Blur Enabled";
+    }
+    else{
+      toggleBackgroundBlurLabel.textContent = "Background Blur Disabled";
+    }
   }
 
   escapeHtml(text) {

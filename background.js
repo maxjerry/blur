@@ -5,6 +5,7 @@ const DEFAULT_EXCLUDED_URLS = ["chrome://", "meet.google.com", "localhost"];
 const STORAGE_KEYS = {
   EXCLUDED_URLS: "excludedUrls",
   BLUR_INTENSITY: "blurIntensity",
+  BACKGROUND_BLUR_STATE: "backgroundBlurState",
 };
 const DEFAULT_BLUR_INTENSITY = 50;
 
@@ -79,8 +80,8 @@ const injectCSS = async (tabId) => {
     const [res] = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
-        if (window.__blurCSSInjected) return true;
-        window.__blurCSSInjected = true;
+        if (window["__blurCSSInjected"]) return true;
+        window["__blurCSSInjected"] = true;
         return false;
       },
     });
@@ -125,11 +126,82 @@ const toggleBlurEffect = async (tabId) => {
   return newState;
 };
 
+const setBackgroundBlurEffect = async (tabId, state = true) => {
+  let newState = state;
+  const [res] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (newState) => {
+      function hasBackgroundImage(element) {
+        const computedStyle = window.getComputedStyle(element);
+        const backgroundImage = computedStyle.backgroundImage;
+
+        // Check if background-image is set and not 'none'
+        return backgroundImage && backgroundImage !== "none";
+      }
+
+      const intersectionObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const element = entry.target;
+
+              // Check if the element now has a background image
+              if (
+                hasBackgroundImage(element) &&
+                !element.classList.contains("has-background-image")
+              ) {
+                element.classList.add("has-background-image");
+              }
+
+              // Also check all child elements
+              const childElements = element.querySelectorAll("*");
+              childElements.forEach((child) => {
+                if (
+                  hasBackgroundImage(child) &&
+                  !child.classList.contains("has-background-image")
+                ) {
+                  child.classList.add("has-background-image");
+                }
+              });
+            }
+          });
+        },
+        {
+          root: null,
+          rootMargin: "50px", // Start observing 50px before element comes into view
+          threshold: 0.1,
+        }
+      );
+      if (newState && !window["__BackgroundBlurEnabled"]) {
+        const allElements = document.querySelectorAll("*");
+        allElements.forEach((element) => {
+          intersectionObserver.observe(element);
+        });
+        window["__BackgroundBlurEnabled"] = true;
+      }
+      if (!newState && window["__BackgroundBlurEnabled"]) {
+        intersectionObserver.disconnect();
+        const allElements = document.querySelectorAll("*");
+        allElements.forEach((element) => {
+          if(element.classList.contains("has-background-image")){
+            element.classList.remove("has-background-image");
+          }
+        });
+        window["__BackgroundBlurEnabled"] = false;
+      }
+    },
+    args: [newState],
+  });
+
+  return newState;
+};
+
 const enableBlurEffect = async (tabId) => {
   const blurIntensity = await loadBlurIntensity();
   await setBadgeText(tabId, BADGE_STATES.ON);
   await injectCSS(tabId);
   await setBlurIntensity(tabId, blurIntensity);
+  await setBackgroundBlurEffect(tabId);
 };
 
 const disableBlurEffect = async (tabId) => {
@@ -179,7 +251,6 @@ chrome.runtime.onMessage.addListener((req, _, sendRes) => {
             await setBadgeText(tab.id, BADGE_STATES.OFF);
             await applyBlurEffect(tab.id, false);
           }
-
           return sendRes({ success: true, urls, addedUrl: hostname });
         }
         case "toggleBlur":
@@ -187,6 +258,13 @@ chrome.runtime.onMessage.addListener((req, _, sendRes) => {
             return sendRes({ success: false, error: "No tab ID provided" });
           const status = await toggleBlurEffect(req.tabId);
           return sendRes({ success: true, newStatus: status });
+        case "toggleBackgroundBlur":
+          if (!req.tabId)
+            return sendRes({ success: false, error: "No tab ID provided" });
+          return sendRes({
+            success: true,
+            newStatus: await setBackgroundBlurEffect(req.tabId, req.state),
+          });
         case "enableBlur":
           if (!req.tabId)
             return sendRes({ success: false, error: "No tab ID provided" });
@@ -246,6 +324,7 @@ chrome.commands.onCommand.addListener(async (cmd) => {
         action: "siteRemovedFromExclusion",
         tabId: tab.id,
         removedUrl: hostname,
+        backgroundBlurStatus: true,
       })
       .catch(() => {});
   } else {
@@ -263,25 +342,24 @@ chrome.commands.onCommand.addListener(async (cmd) => {
 const shouldProcess = (url) =>
   url && (url.startsWith("http") || url.startsWith("https"));
 
-
-chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId, url }) => {
-  try {
-    const isExcluded = await isUrlExcluded(url);
-    if (shouldProcess(url)) {
-      if (!isExcluded) {
-        if (frameId == 0) {
-          await enableBlurEffect(tabId);
+chrome.webNavigation.onCommitted.addListener(
+  async ({ tabId, frameId, url }) => {
+    try {
+      const isExcluded = await isUrlExcluded(url);
+      if (shouldProcess(url)) {
+        if (!isExcluded) {
+          if (frameId == 0) {
+            await enableBlurEffect(tabId);
+          } else {
+            await enableFrameBlurEffect(tabId, frameId);
+          }
+        } else {
+          await disableBlurEffect(tabId);
         }
-        else{
-          await enableFrameBlurEffect(tabId, frameId);
-        }
-      } else {
-        await disableBlurEffect(tabId);
       }
-    }
-  } catch (error) {
+    } catch (error) {}
   }
-});
+);
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const tab = await chrome.tabs.get(tabId);
@@ -294,7 +372,6 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     }
   }
 });
-
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading" && shouldProcess(tab.url)) {

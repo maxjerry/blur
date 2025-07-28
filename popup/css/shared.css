@@ -28,6 +28,10 @@ body {
   margin-bottom: 20px;
 }
 
+.toggle-background-blur {
+  margin-top: 20px;
+}
+
 .section h2 {
   margin: 0 0 8px 0;
   font-size: 14px;
