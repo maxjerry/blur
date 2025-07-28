@@ -5,7 +5,7 @@ class PopupManager {
     this.excludedUrls = ["chrome://", "meet.google.com", "localhost"];
     this.currentTabId = null;
     this.blurStatus = "OFF";
-    this.backgroundBlurStatus = true;
+    this.backgroundBlurStatus = false;
     this.blurIntensity = 50;
 
     this.init();
@@ -15,6 +15,7 @@ class PopupManager {
     await this.loadCurrentTab();
     await this.loadExcludedUrls();
     await this.loadBlurIntensity();
+    await this.loadBackgroundBlurState();
     this.setupEventListeners();
     this.setupMessageListener();
     this.render();
@@ -43,6 +44,7 @@ class PopupManager {
       console.error("Failed to load current tab:", error);
     }
   }
+
   async setBlurIntensity(intensity) {
     if (!this.currentTabId) {
       this.showMessage("No active tab found", "error");
@@ -117,17 +119,28 @@ class PopupManager {
     }
   }
 
+  async loadBackgroundBlurState() {
+    try {
+      const response = await this.sendMessage({
+        action: "getBackgroundBlurStatus",
+      });
+      if (response.success) {
+        this.backgroundBlurStatus = response.backgroundBlurStatus;
+      }
+    } catch (error) {
+      console.error("Failed to load background blur state:", error);
+    }
+  }
+
   async toggleBackgroundBlur() {
     if (!this.currentTabId) {
       this.showMessage("No active tab found", "error");
       return;
     }
-
     try {
       const response = await this.sendMessage({
         action: "toggleBackgroundBlur",
         tabId: this.currentTabId,
-        state: !this.backgroundBlurStatus,
       });
       if (response.success) {
         this.backgroundBlurStatus = response.newStatus;
@@ -148,6 +161,7 @@ class PopupManager {
       this.showMessage("Failed to toggle background blur", "error");
     }
   }
+
   async enableBlurForCurrentSite() {
     if (!this.currentTabId) return;
 
@@ -245,6 +259,7 @@ class PopupManager {
   setupMessageListener() {
     // Listen for blur state changes from background script
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      console.log(request);
       if (request.tabId === this.currentTabId) {
         if (request.action === "blurStateChanged") {
           this.blurStatus = request.newStatus;
@@ -260,6 +275,12 @@ class PopupManager {
             `Removed "${request.removedUrl}" from excluded URLs and enabled blur`,
             "success"
           );
+          this.render();
+        } else if (request.action === "loadSettings") {
+          // Site was removed from exclusion list
+          this.excludedUrls = request.excludedUrls;
+          this.backgroundBlurStatus = request.backgroundBlurStatus;
+          this.blurIntensity = request.blurIntensity;
           this.render();
         }
         sendResponse({ success: true });
@@ -501,12 +522,12 @@ class PopupManager {
       "toggleBackgroundBlurSwitch"
     );
     toggleBackgroundBlurSwitch.checked = this.backgroundBlurStatus;
-    const toggleBackgroundBlurLabel = document.getElementById("toggleBackgroundBlurLabel");
-    if(this.backgroundBlurStatus)
-    {
+    const toggleBackgroundBlurLabel = document.getElementById(
+      "toggleBackgroundBlurLabel"
+    );
+    if (this.backgroundBlurStatus) {
       toggleBackgroundBlurLabel.textContent = "Background Blur Enabled";
-    }
-    else{
+    } else {
       toggleBackgroundBlurLabel.textContent = "Background Blur Disabled";
     }
   }
