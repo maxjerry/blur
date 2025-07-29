@@ -1,113 +1,114 @@
 class PopupManager {
   constructor() {
-    this.currentUrl = "";
-    this.currentHostname = "";
-    this.excludedUrls = ["chrome://", "meet.google.com", "localhost"];
-    this.currentTabId = null;
-    this.blurStatus = "OFF";
-    this.backgroundBlurStatus = false;
-    this.blurIntensity = 50;
+    this.state = {
+      currentUrl: "",
+      currentHostname: "",
+      currentTabId: null,
+      blurStatus: "OFF",
+      backgroundBlurStatus: false,
+      blurIntensity: 50,
+      excludedUrls: ["chrome://", "meet.google.com", "localhost"]
+    };
 
+    this.elements = {};
     this.init();
   }
 
+  // === INITIALIZATION ===
   async init() {
-    await this.loadCurrentTab();
-    await this.loadExcludedUrls();
-    await this.loadBlurIntensity();
-    await this.loadBackgroundBlurState();
-    this.setupEventListeners();
-    this.setupMessageListener();
-    this.render();
+    try {
+      this.cacheElements();
+      await this.loadInitialData();
+      this.setupEventListeners();
+      this.setupMessageListener();
+      this.render();
+    } catch (error) {
+      console.error("Failed to initialize PopupManager:", error);
+      this.showMessage("Failed to initialize popup", "error");
+    }
   }
 
+  cacheElements() {
+    const elementIds = [
+      'addUrlBtn', 'newUrlInput', 'toggleCurrentSite', 'toggleBlurSwitch',
+      'toggleBackgroundBlurSwitch', 'intensitySlider', 'currentUrl',
+      'currentStatus', 'toggleBlurLabel', 'toggleBackgroundBlurLabel',
+      'excludedList', 'intensityValue', 'previewText', 'message'
+    ];
+
+    elementIds.forEach(id => {
+      this.elements[id] = document.getElementById(id);
+    });
+  }
+
+  async loadInitialData() {
+    await Promise.all([
+      this.loadCurrentTab(),
+      this.loadExcludedUrls(),
+      this.loadBlurIntensity(),
+      this.loadBackgroundBlurState()
+    ]);
+  }
+
+  // === DATA LOADING ===
   async loadCurrentTab() {
     try {
-      const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-      this.currentUrl = tab.url || "";
-      this.currentHostname = this.currentUrl
-        ? new URL(this.currentUrl).hostname
-        : "";
-      this.currentTabId = tab.id;
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      this.state.currentUrl = tab.url || "";
+      this.state.currentHostname = this.extractHostname(this.state.currentUrl);
+      this.state.currentTabId = tab.id;
 
-      // Get current blur status
-      if (this.currentTabId) {
-        const badgeText = await chrome.action.getBadgeText({
-          tabId: this.currentTabId,
-        });
-        this.blurStatus = badgeText || "OFF";
+      if (this.state.currentTabId) {
+        const badgeText = await chrome.action.getBadgeText({ tabId: this.state.currentTabId });
+        this.state.blurStatus = badgeText || "OFF";
       }
     } catch (error) {
       console.error("Failed to load current tab:", error);
+      throw error;
     }
   }
 
-  async setBlurIntensity(intensity) {
-    if (!this.currentTabId) {
-      this.showMessage("No active tab found", "error");
-      return;
-    }
-
-    try {
-      const response = await this.sendMessage({
-        action: "setBlurIntensity",
-        tabId: this.currentTabId,
-        intensity: intensity,
-      });
-
-      if (response.success) {
-        this.blurStatus = "ON";
-        this.blurIntensity = intensity;
-        this.render();
-      } else {
-        this.showMessage(
-          response.error || "Failed to set blur intensity",
-          "error"
-        );
-      }
-    } catch (error) {
-      this.showMessage("Failed to set blur intensity", "error");
+  async loadExcludedUrls() {
+    const response = await this.sendMessage({ action: "getExcludedUrls" });
+    if (response.success) {
+      this.state.excludedUrls = response.urls;
     }
   }
 
+  async loadBlurIntensity() {
+    const response = await this.sendMessage({ action: "getBlurIntensity" });
+    if (response.success) {
+      this.state.blurIntensity = response.intensity;
+    }
+  }
+
+  async loadBackgroundBlurState() {
+    const response = await this.sendMessage({ action: "getBackgroundBlurStatus" });
+    if (response.success) {
+      this.state.backgroundBlurStatus = response.backgroundBlurStatus;
+    }
+  }
+
+  // === BLUR OPERATIONS ===
   async toggleBlur() {
-    if (!this.currentTabId) {
-      this.showMessage("No active tab found", "error");
-      return;
-    }
+    if (!this.validateActiveTab()) return;
 
-    const isExcluded = this.excludedUrls.some(
-      (url) =>
-        this.currentHostname.includes(url) || url.includes(this.currentHostname)
-    );
-
-    if (isExcluded) {
-      // Remove from excluded list and enable blur
-      const matchingUrl = this.excludedUrls.find(
-        (url) =>
-          this.currentHostname.includes(url) ||
-          url.includes(this.currentHostname)
-      );
-      if (matchingUrl) {
-        await this.removeUrl(matchingUrl);
-        // removeUrl will handle enabling blur automatically
-      }
+    if (this.isCurrentSiteExcluded()) {
+      await this.removeCurrentSiteFromExclusion();
       return;
     }
 
     try {
       const response = await this.sendMessage({
         action: "toggleBlur",
-        tabId: this.currentTabId,
+        tabId: this.state.currentTabId
       });
 
       if (response.success) {
-        this.blurStatus = response.newStatus;
+        this.state.blurStatus = response.newStatus;
         this.showMessage(
-          `Blur ${this.blurStatus === "ON" ? "enabled" : "disabled"}`,
+          `Blur ${this.state.blurStatus === "ON" ? "enabled" : "disabled"}`,
           "success"
         );
         this.render();
@@ -119,178 +120,55 @@ class PopupManager {
     }
   }
 
-  async loadBackgroundBlurState() {
+  async setBlurIntensity(intensity) {
+    if (!this.validateActiveTab()) return;
+
     try {
       const response = await this.sendMessage({
-        action: "getBackgroundBlurStatus",
+        action: "setBlurIntensity",
+        tabId: this.state.currentTabId,
+        intensity: parseInt(intensity)
       });
+
       if (response.success) {
-        this.backgroundBlurStatus = response.backgroundBlurStatus;
+        this.state.blurStatus = "ON";
+        this.state.blurIntensity = parseInt(intensity);
+        this.render();
+      } else {
+        this.showMessage(response.error || "Failed to set blur intensity", "error");
       }
     } catch (error) {
-      console.error("Failed to load background blur state:", error);
+      this.showMessage("Failed to set blur intensity", "error");
     }
   }
 
   async toggleBackgroundBlur() {
-    if (!this.currentTabId) {
-      this.showMessage("No active tab found", "error");
-      return;
-    }
+    if (!this.validateActiveTab()) return;
+
     try {
       const response = await this.sendMessage({
         action: "toggleBackgroundBlur",
-        tabId: this.currentTabId,
+        tabId: this.state.currentTabId
       });
+
       if (response.success) {
-        this.backgroundBlurStatus = response.newStatus;
+        this.state.backgroundBlurStatus = response.newStatus;
         this.showMessage(
-          `Background Blur ${
-            this.backgroundBlurStatus ? "enabled" : "disabled"
-          }`,
+          `Background Blur ${this.state.backgroundBlurStatus ? "enabled" : "disabled"}`,
           "success"
         );
         this.render();
       } else {
-        this.showMessage(
-          response.error || "Failed to toggle background blur",
-          "error"
-        );
+        this.showMessage(response.error || "Failed to toggle background blur", "error");
       }
     } catch (error) {
       this.showMessage("Failed to toggle background blur", "error");
     }
   }
 
-  async enableBlurForCurrentSite() {
-    if (!this.currentTabId) return;
-
-    try {
-      const response = await this.sendMessage({
-        action: "enableBlur",
-        tabId: this.currentTabId,
-      });
-
-      if (response.success) {
-        this.blurStatus = "ON";
-        this.showMessage("Blur automatically enabled", "success");
-      }
-    } catch (error) {
-      console.error("Failed to enable blur automatically:", error);
-    }
-  }
-
-  async loadExcludedUrls() {
-    try {
-      const response = await this.sendMessage({ action: "getExcludedUrls" });
-      if (response.success) {
-        this.excludedUrls = response.urls;
-      }
-    } catch (error) {
-      console.error("Failed to load excluded URLs:", error);
-    }
-  }
-
-  async loadBlurIntensity() {
-    try {
-      const response = await this.sendMessage({ action: "getBlurIntensity" });
-      if (response.success) {
-        this.blurIntensity = response.intensity;
-      }
-    } catch (error) {
-      console.error("Failed to load Blur Intensity:", error);
-    }
-  }
-
-  async sendMessage(message) {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage(message, resolve);
-    });
-  }
-
-  setupEventListeners() {
-    // Add URL button
-    document.getElementById("addUrlBtn").addEventListener("click", () => {
-      this.addUrl();
-    });
-
-    // Enter key on input
-    document.getElementById("newUrlInput").addEventListener("keypress", (e) => {
-      if (e.key === "Enter") {
-        this.addUrl();
-      }
-    });
-
-    // Toggle current site
-    document
-      .getElementById("toggleCurrentSite")
-      .addEventListener("click", () => {
-        this.toggleCurrentSite();
-      });
-
-    // Toggle blur switch
-    document
-      .getElementById("toggleBlurSwitch")
-      .addEventListener("change", () => {
-        this.toggleBlur();
-      });
-    // Toggle background blur switch
-    document
-      .getElementById("toggleBackgroundBlurSwitch")
-      .addEventListener("change", () => {
-        this.toggleBackgroundBlur();
-      });
-
-    // Blur intensity slider
-    document
-      .getElementById("intensitySlider")
-      .addEventListener("input", (e) => {
-        this.setBlurIntensity(e.target.value);
-      });
-
-    document.addEventListener("click", (e) => {
-      if (e.target.classList.contains("removeExcludedUrlBtn")) {
-        const url = e.target.dataset.url;
-        this.removeUrl(url);
-      }
-    });
-  }
-
-  setupMessageListener() {
-    // Listen for blur state changes from background script
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      console.log(request);
-      if (request.tabId === this.currentTabId) {
-        if (request.action === "blurStateChanged") {
-          this.blurStatus = request.newStatus;
-          this.render();
-        } else if (request.action === "siteRemovedFromExclusion") {
-          // Site was removed from exclusion list
-          this.excludedUrls = this.excludedUrls.filter(
-            (url) => url !== request.removedUrl
-          );
-          this.blurStatus = "ON";
-          this.backgroundBlurStatus = request.backgroundBlurStatus;
-          this.showMessage(
-            `Removed "${request.removedUrl}" from excluded URLs and enabled blur`,
-            "success"
-          );
-          this.render();
-        } else if (request.action === "loadSettings") {
-          // Site was removed from exclusion list
-          this.excludedUrls = request.excludedUrls;
-          this.backgroundBlurStatus = request.backgroundBlurStatus;
-          this.blurIntensity = request.blurIntensity;
-          this.render();
-        }
-        sendResponse({ success: true });
-      }
-    });
-  }
-
+  // === URL MANAGEMENT ===
   async addUrl() {
-    const input = document.getElementById("newUrlInput");
-    const url = input.value.trim();
+    const url = this.elements.newUrlInput.value.trim();
 
     if (!url) {
       this.showMessage("Please enter a URL or domain", "error");
@@ -300,12 +178,12 @@ class PopupManager {
     try {
       const response = await this.sendMessage({
         action: "addExcludedUrl",
-        url: url,
+        url: url
       });
 
       if (response.success) {
-        this.excludedUrls = response.urls;
-        input.value = "";
+        this.state.excludedUrls = response.urls;
+        this.elements.newUrlInput.value = "";
         this.showMessage(`Added "${url}" to excluded URLs`, "success");
         this.render();
       } else {
@@ -320,19 +198,14 @@ class PopupManager {
     try {
       const response = await this.sendMessage({
         action: "removeExcludedUrl",
-        url: url,
+        url: url
       });
 
       if (response.success) {
-        this.excludedUrls = response.urls;
+        this.state.excludedUrls = response.urls;
         this.showMessage(`Removed "${url}" from excluded URLs`, "success");
 
-        // If current site was removed from excluded, automatically enable blur
-        if (
-          this.currentHostname &&
-          (this.currentHostname.includes(url) ||
-            url.includes(this.currentHostname))
-        ) {
+        if (this.isUrlMatchingCurrentSite(url)) {
           await this.enableBlurForCurrentSite();
         }
 
@@ -346,62 +219,117 @@ class PopupManager {
   }
 
   async toggleCurrentSite() {
-    if (!this.currentHostname) {
+    if (!this.state.currentHostname) {
       this.showMessage("No valid hostname found", "error");
       return;
     }
 
-    const isCurrentlyExcluded = this.excludedUrls.some(
-      (url) =>
-        this.currentHostname.includes(url) || url.includes(this.currentHostname)
-    );
-
-    if (isCurrentlyExcluded) {
-      // Find and remove the matching URL
-      const matchingUrl = this.excludedUrls.find(
-        (url) =>
-          this.currentHostname.includes(url) ||
-          url.includes(this.currentHostname)
-      );
-      if (matchingUrl) {
-        await this.removeUrl(matchingUrl);
-        // removeUrl will handle enabling blur automatically
-      }
+    if (this.isCurrentSiteExcluded()) {
+      await this.removeCurrentSiteFromExclusion();
     } else {
-      // Add current hostname
-      try {
-        const response = await this.sendMessage({ action: "addCurrentUrl" });
-        if (response.success) {
-          this.excludedUrls = response.urls;
-          this.showMessage(
-            `Added "${response.addedUrl}" to excluded URLs`,
-            "success"
-          );
-          this.render();
-        } else {
-          this.showMessage(
-            response.error || "Failed to add current site",
-            "error"
-          );
-        }
-      } catch (error) {
-        this.showMessage("Failed to add current site", "error");
-      }
+      await this.addCurrentSiteToExclusion();
     }
   }
 
-  showMessage(text, type) {
-    const messageDiv = document.getElementById("message");
-    messageDiv.textContent = text;
-    messageDiv.className =
-      type === "error" ? "error-message" : "success-message";
-
-    setTimeout(() => {
-      messageDiv.textContent = "";
-      messageDiv.className = "";
-    }, 3000);
+  async removeCurrentSiteFromExclusion() {
+    const matchingUrl = this.findMatchingExcludedUrl();
+    if (matchingUrl) {
+      await this.removeUrl(matchingUrl);
+    }
   }
 
+  async addCurrentSiteToExclusion() {
+    try {
+      const response = await this.sendMessage({ action: "addCurrentUrl" });
+      
+      if (response.success) {
+        this.state.excludedUrls = response.urls;
+        this.showMessage(`Added "${response.addedUrl}" to excluded URLs`, "success");
+        this.render();
+      } else {
+        this.showMessage(response.error || "Failed to add current site", "error");
+      }
+    } catch (error) {
+      this.showMessage("Failed to add current site", "error");
+    }
+  }
+
+  async enableBlurForCurrentSite() {
+    if (!this.state.currentTabId) return;
+
+    try {
+      const response = await this.sendMessage({
+        action: "enableBlur",
+        tabId: this.state.currentTabId
+      });
+
+      if (response.success) {
+        this.state.blurStatus = "ON";
+        this.showMessage("Blur automatically enabled", "success");
+      }
+    } catch (error) {
+      console.error("Failed to enable blur automatically:", error);
+    }
+  }
+
+  // === EVENT LISTENERS ===
+  setupEventListeners() {
+    const eventMappings = [
+      { element: 'addUrlBtn', event: 'click', handler: () => this.addUrl() },
+      { element: 'newUrlInput', event: 'keypress', handler: (e) => e.key === 'Enter' && this.addUrl() },
+      { element: 'toggleCurrentSite', event: 'click', handler: () => this.toggleCurrentSite() },
+      { element: 'toggleBlurSwitch', event: 'change', handler: () => this.toggleBlur() },
+      { element: 'toggleBackgroundBlurSwitch', event: 'change', handler: () => this.toggleBackgroundBlur() },
+      { element: 'intensitySlider', event: 'input', handler: (e) => this.setBlurIntensity(e.target.value) }
+    ];
+
+    eventMappings.forEach(({ element, event, handler }) => {
+      if (this.elements[element]) {
+        this.elements[element].addEventListener(event, handler);
+      }
+    });
+
+    // Delegation for remove buttons
+    document.addEventListener("click", (e) => {
+      if (e.target.classList.contains("removeExcludedUrlBtn")) {
+        this.removeUrl(e.target.dataset.url);
+      }
+    });
+  }
+
+  setupMessageListener() {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.tabId !== this.state.currentTabId) return;
+
+      const handlers = {
+        blurStateChanged: () => {
+          this.state.blurStatus = request.newStatus;
+          this.render();
+        },
+        siteRemovedFromExclusion: () => {
+          this.state.excludedUrls = this.state.excludedUrls.filter(url => url !== request.removedUrl);
+          this.state.blurStatus = "ON";
+          this.state.backgroundBlurStatus = request.backgroundBlurStatus;
+          this.showMessage(`Removed "${request.removedUrl}" from excluded URLs and enabled blur`, "success");
+          this.render();
+        },
+        loadSettings: () => {
+          this.state.excludedUrls = request.excludedUrls;
+          this.state.backgroundBlurStatus = request.backgroundBlurStatus;
+          this.state.blurIntensity = request.blurIntensity;
+          this.render();
+        }
+      };
+
+      const handler = handlers[request.action];
+      if (handler) {
+        handler();
+        sendResponse({ success: true });
+      }
+    });
+  }
+
+  // === RENDERING ===
   render() {
     this.renderCurrentSite();
     this.renderExcludedList();
@@ -410,126 +338,160 @@ class PopupManager {
   }
 
   renderCurrentSite() {
-    const urlElement = document.getElementById("currentUrl");
-    const statusElement = document.getElementById("currentStatus");
-    const toggleButton = document.getElementById("toggleCurrentSite");
-    const toggleBlurSwitch = document.getElementById("toggleBlurSwitch");
-    const toggleBackgroundBlurSwitch = document.getElementById(
-      "toggleBackgroundBlurSwitch"
-    );
-    const toggleBlurLabel = document.getElementById("toggleBlurLabel");
-
-    if (!this.currentHostname) {
-      urlElement.textContent = "No valid URL";
-      statusElement.textContent = "N/A";
-      statusElement.className = "status";
-      toggleButton.style.display = "none";
-      if (toggleBlurSwitch)
-        toggleBlurSwitch.parentElement.style.display = "none";
+    if (!this.state.currentHostname) {
+      this.renderInvalidSite();
       return;
     }
 
-    urlElement.textContent = this.currentHostname;
+    this.elements.currentUrl.textContent = this.state.currentHostname;
 
-    const isExcluded = this.excludedUrls.some(
-      (url) =>
-        this.currentHostname.includes(url) || url.includes(this.currentHostname)
-    );
+    const isExcluded = this.isCurrentSiteExcluded();
+    const siteConfig = this.getSiteRenderConfig(isExcluded);
+    
+    this.applySiteConfig(siteConfig);
+  }
 
+  renderInvalidSite() {
+    this.elements.currentUrl.textContent = "No valid URL";
+    this.elements.currentStatus.textContent = "N/A";
+    this.elements.currentStatus.className = "status";
+    this.elements.toggleCurrentSite.style.display = "none";
+    
+    if (this.elements.toggleBlurSwitch) {
+      this.elements.toggleBlurSwitch.parentElement.style.display = "none";
+    }
+  }
+
+  getSiteRenderConfig(isExcluded) {
     if (isExcluded) {
-      statusElement.textContent = "Excluded";
-      statusElement.className = "status excluded";
-      toggleButton.textContent = "Remove from Excluded";
-      toggleButton.className = "btn btn-danger btn-small";
-      if (toggleBlurSwitch) {
-        toggleBlurSwitch.parentElement.style.display = "flex";
-        toggleBlurSwitch.checked = false;
-        toggleBackgroundBlurSwitch.checked = false;
-        toggleBackgroundBlurSwitch.parentElement.style.display = "none";
-        if (toggleBlurLabel) toggleBlurLabel.textContent = "Blur (Excluded)";
-      }
-    } else {
-      statusElement.textContent = `Blur: ${this.blurStatus}`;
-      statusElement.className =
-        this.blurStatus === "ON" ? "status active" : "status";
-      toggleButton.textContent = "Add to Excluded";
-      toggleButton.className = "btn btn-secondary btn-small";
-      if (toggleBlurSwitch) {
-        toggleBlurSwitch.parentElement.style.display = "flex";
-        toggleBlurSwitch.checked = this.blurStatus === "ON";
-        if (toggleBlurLabel)
-          toggleBlurLabel.textContent =
-            this.blurStatus === "ON" ? "Blur Enabled" : "Blur Disabled";
-        toggleBackgroundBlurSwitch.parentElement.style.display = "flex";
-        if (this.blurStatus === "OFF") {
-          toggleBackgroundBlurSwitch.parentElement.style.display = "none";
-        } else {
-          toggleBackgroundBlurSwitch.parentElement.style.display = "flex";
-        }
-      }
+      return {
+        statusText: "Excluded",
+        statusClass: "status excluded",
+        buttonText: "Remove from Excluded",
+        buttonClass: "btn btn-danger btn-small",
+        blurSwitchChecked: false,
+        backgroundBlurDisplay: "none",
+        blurLabelText: "Blur (Excluded)"
+      };
     }
 
-    toggleButton.style.display = "block";
+    return {
+      statusText: `Blur: ${this.state.blurStatus}`,
+      statusClass: this.state.blurStatus === "ON" ? "status active" : "status",
+      buttonText: "Add to Excluded",
+      buttonClass: "btn btn-secondary btn-small",
+      blurSwitchChecked: this.state.blurStatus === "ON",
+      backgroundBlurDisplay: this.state.blurStatus === "OFF" ? "none" : "flex",
+      blurLabelText: this.state.blurStatus === "ON" ? "Blur Enabled" : "Blur Disabled"
+    };
+  }
+
+  applySiteConfig(config) {
+    this.elements.currentStatus.textContent = config.statusText;
+    this.elements.currentStatus.className = config.statusClass;
+    this.elements.toggleCurrentSite.textContent = config.buttonText;
+    this.elements.toggleCurrentSite.className = config.buttonClass;
+    this.elements.toggleCurrentSite.style.display = "block";
+
+    if (this.elements.toggleBlurSwitch) {
+      this.elements.toggleBlurSwitch.parentElement.style.display = "flex";
+      this.elements.toggleBlurSwitch.checked = config.blurSwitchChecked;
+      
+      if (this.elements.toggleBlurLabel) {
+        this.elements.toggleBlurLabel.textContent = config.blurLabelText;
+      }
+      
+      if (this.elements.toggleBackgroundBlurSwitch) {
+        this.elements.toggleBackgroundBlurSwitch.parentElement.style.display = config.backgroundBlurDisplay;
+      }
+    }
   }
 
   renderExcludedList() {
-    const listElement = document.getElementById("excludedList");
-
-    if (this.excludedUrls.length === 0) {
-      listElement.innerHTML = '<div class="empty-state">No excluded URLs</div>';
+    if (this.state.excludedUrls.length === 0) {
+      this.elements.excludedList.innerHTML = '<div class="empty-state">No excluded URLs</div>';
       return;
     }
 
-    listElement.innerHTML = this.excludedUrls
-      .map((url) => {
-        return `
-        <div class="excluded-item">
-          <div class="excluded-url">
-            ${this.escapeHtml(url)}
-          </div>
-          <button class="btn btn-danger btn-small removeExcludedUrlBtn" data-url="${this.escapeHtml(
-            url
-          )}">Remove</button>
-        </div>
-      `;
-      })
+    this.elements.excludedList.innerHTML = this.state.excludedUrls
+      .map(url => this.createExcludedItemHTML(url))
       .join("");
   }
 
-  renderBlurIntensity() {
-    const isCurrentlyExcluded = this.excludedUrls.some(
-      (url) =>
-        this.currentHostname.includes(url) || url.includes(this.currentHostname)
-    );
-    const intensityValueElement = document.getElementById("intensityValue");
-    const previewElement = document.getElementById("previewText");
-    const sliderElement = document.getElementById("intensitySlider");
+  createExcludedItemHTML(url) {
+    return `
+      <div class="excluded-item">
+        <div class="excluded-url">${this.escapeHtml(url)}</div>
+        <button class="btn btn-danger btn-small removeExcludedUrlBtn" data-url="${this.escapeHtml(url)}">
+          Remove
+        </button>
+      </div>
+    `;
+  }
 
-    intensityValueElement.innerHTML = `${this.blurIntensity}px`;
-    previewElement.style.filter = `blur(${this.blurIntensity}px)`;
-    sliderElement.value = this.blurIntensity;
-    sliderElement.disabled = isCurrentlyExcluded;
-    const intensityContainerElement = document.querySelector(
-      ".blur-intensity-section"
-    );
-    intensityContainerElement.style.display = isCurrentlyExcluded
-      ? "none"
-      : "block";
+  renderBlurIntensity() {
+    const isExcluded = this.isCurrentSiteExcluded();
+    
+    this.elements.intensityValue.textContent = `${this.state.blurIntensity}px`;
+    this.elements.previewText.style.filter = `blur(${this.state.blurIntensity}px)`;
+    this.elements.intensitySlider.value = this.state.blurIntensity;
+    this.elements.intensitySlider.disabled = isExcluded;
+    
+    const intensityContainer = document.querySelector(".blur-intensity-section");
+    if (intensityContainer) {
+      intensityContainer.style.display = isExcluded ? "none" : "block";
+    }
   }
 
   renderBackgroundBlur() {
-    const toggleBackgroundBlurSwitch = document.getElementById(
-      "toggleBackgroundBlurSwitch"
-    );
-    toggleBackgroundBlurSwitch.checked = this.backgroundBlurStatus;
-    const toggleBackgroundBlurLabel = document.getElementById(
-      "toggleBackgroundBlurLabel"
-    );
-    if (this.backgroundBlurStatus) {
-      toggleBackgroundBlurLabel.textContent = "Background Blur Enabled";
-    } else {
-      toggleBackgroundBlurLabel.textContent = "Background Blur Disabled";
+    this.elements.toggleBackgroundBlurSwitch.checked = this.state.backgroundBlurStatus;
+    this.elements.toggleBackgroundBlurLabel.textContent = 
+      `Background Blur ${this.state.backgroundBlurStatus ? "Enabled" : "Disabled"}`;
+  }
+
+  // === UTILITY METHODS ===
+  extractHostname(url) {
+    try {
+      return url ? new URL(url).hostname : "";
+    } catch {
+      return "";
     }
+  }
+
+  validateActiveTab() {
+    if (!this.state.currentTabId) {
+      this.showMessage("No active tab found", "error");
+      return false;
+    }
+    return true;
+  }
+
+  isCurrentSiteExcluded() {
+    return this.state.excludedUrls.some(url => this.isUrlMatchingCurrentSite(url));
+  }
+
+  isUrlMatchingCurrentSite(url) {
+    return this.state.currentHostname.includes(url) || url.includes(this.state.currentHostname);
+  }
+
+  findMatchingExcludedUrl() {
+    return this.state.excludedUrls.find(url => this.isUrlMatchingCurrentSite(url));
+  }
+
+  async sendMessage(message) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(message, resolve);
+    });
+  }
+
+  showMessage(text, type) {
+    this.elements.message.textContent = text;
+    this.elements.message.className = type === "error" ? "error-message" : "success-message";
+
+    setTimeout(() => {
+      this.elements.message.textContent = "";
+      this.elements.message.className = "";
+    }, 3000);
   }
 
   escapeHtml(text) {

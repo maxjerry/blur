@@ -1,154 +1,220 @@
-// Constants
-const CSS_FILES = { BLUR: "blur.css" };
-const BADGE_STATES = { ON: "ON", OFF: "OFF" };
-const DEFAULT_EXCLUDED_URLS = ["chrome://", "meet.google.com", "localhost"];
-const STORAGE_KEYS = {
-  EXCLUDED_URLS: "excludedUrls",
-  BLUR_INTENSITY: "blurIntensity",
-  BACKGROUND_BLUR_STATE: "backgroundBlurState",
-};
-const DEFAULT_BLUR_INTENSITY = 50;
-const DEFAULT_BACKGROUND_BLUR_STATE = false;
-
-// --- Storage Management ---
-const loadExcludedUrls = async () => {
-  const result = await chrome.storage.sync.get(STORAGE_KEYS.EXCLUDED_URLS);
-  return result[STORAGE_KEYS.EXCLUDED_URLS] || DEFAULT_EXCLUDED_URLS;
+// === CONSTANTS ===
+const CONFIG = {
+  CSS_FILES: { BLUR: "blur.css" },
+  BADGE_STATES: { ON: "ON", OFF: "OFF" },
+  STORAGE_KEYS: {
+    EXCLUDED_URLS: "excludedUrls",
+    BLUR_INTENSITY: "blurIntensity",
+    BACKGROUND_BLUR_STATE: "backgroundBlurState",
+  },
+  DEFAULTS: {
+    EXCLUDED_URLS: ["chrome://", "meet.google.com", "localhost"],
+    BLUR_INTENSITY: 50,
+    BACKGROUND_BLUR_STATE: false,
+  }
 };
 
-const saveExcludedUrls = (urls) =>
-  chrome.storage.sync.set({ [STORAGE_KEYS.EXCLUDED_URLS]: urls });
-
-const loadBackgroundBlurStatus = async () => {
-  const result = await chrome.storage.sync.get(
-    STORAGE_KEYS.BACKGROUND_BLUR_STATE
-  );
-  return (
-    result[STORAGE_KEYS.BACKGROUND_BLUR_STATE] || DEFAULT_BACKGROUND_BLUR_STATE
-  );
-};
-
-const saveBackgroundBlurStatus = (state) =>
-  chrome.storage.sync.set({ [STORAGE_KEYS.BACKGROUND_BLUR_STATE]: state });
-
-const loadBlurIntensity = async () => {
-  const result = await chrome.storage.sync.get(STORAGE_KEYS.BLUR_INTENSITY);
-  return result[STORAGE_KEYS.BLUR_INTENSITY] || DEFAULT_BLUR_INTENSITY;
-};
-
-const saveBlurIntensity = (intensity) =>
-  chrome.storage.sync.set({ [STORAGE_KEYS.BLUR_INTENSITY]: intensity });
-
-const updateExcludedUrls = async (url, action) => {
-  const urls = await loadExcludedUrls();
-  const normalizedUrl = url.trim().toLowerCase();
-  let updated;
-
-  if (action === "add" && !urls.includes(normalizedUrl)) {
-    updated = [...urls, normalizedUrl];
-  } else if (action === "remove") {
-    updated = urls.filter((u) => u !== normalizedUrl);
-  } else {
-    updated = urls;
+// === STORAGE MANAGER ===
+class StorageManager {
+  static async get(key, defaultValue) {
+    const result = await chrome.storage.sync.get(key);
+    return result[key] ?? defaultValue;
   }
 
-  await saveExcludedUrls(updated);
-  return updated;
-};
+  static async set(key, value) {
+    return chrome.storage.sync.set({ [key]: value });
+  }
 
-const isUrlExcluded = async (url, excludeLocalhost = false) => {
-  if (!url) return true;
-  const urls = await loadExcludedUrls();
-  const list = excludeLocalhost ? urls : urls.filter((u) => u !== "localhost");
-  return list.some((u) => url.toLowerCase().includes(u));
-};
+  static async getExcludedUrls() {
+    return this.get(CONFIG.STORAGE_KEYS.EXCLUDED_URLS, CONFIG.DEFAULTS.EXCLUDED_URLS);
+  }
 
-// --- UI Effects ---
-const setBadgeText = (tabId, text) =>
-  chrome.action.setBadgeText({ tabId, text });
+  static async setExcludedUrls(urls) {
+    return this.set(CONFIG.STORAGE_KEYS.EXCLUDED_URLS, urls);
+  }
 
-const setBlurIntensity = (tabId, intensity) =>
-  chrome.scripting.executeScript({
-    target: { tabId, allFrames: true },
-    func: (val) =>
-      document.documentElement.style.setProperty(
-        "--blur-intensity",
-        `${val}px`
-      ),
-    args: [intensity],
-  });
-const setFrameBlurIntensity = (tabId, frameId, intensity) =>
-  chrome.scripting.executeScript({
-    target: { tabId, frameIds: [frameId] },
-    func: (val) =>
-      document.documentElement.style.setProperty(
-        "--blur-intensity",
-        `${val}px`
-      ),
-    args: [intensity],
-  });
+  static async getBlurIntensity() {
+    return this.get(CONFIG.STORAGE_KEYS.BLUR_INTENSITY, CONFIG.DEFAULTS.BLUR_INTENSITY);
+  }
 
-const injectCSS = async (tabId) => {
-  try {
-    const [res] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        if (window["__blurCSSInjected"]) return true;
-        window["__blurCSSInjected"] = true;
-        return false;
-      },
-    });
-    if (!res.result) {
-      await chrome.scripting.insertCSS({
-        target: { tabId },
-        files: [CSS_FILES.BLUR],
-      });
+  static async setBlurIntensity(intensity) {
+    return this.set(CONFIG.STORAGE_KEYS.BLUR_INTENSITY, intensity);
+  }
+
+  static async getBackgroundBlurStatus() {
+    return this.get(CONFIG.STORAGE_KEYS.BACKGROUND_BLUR_STATE, CONFIG.DEFAULTS.BACKGROUND_BLUR_STATE);
+  }
+
+  static async setBackgroundBlurStatus(state) {
+    return this.set(CONFIG.STORAGE_KEYS.BACKGROUND_BLUR_STATE, state);
+  }
+}
+
+// === URL MANAGER ===
+class URLManager {
+  static async updateExcludedUrls(url, action) {
+    const urls = await StorageManager.getExcludedUrls();
+    const normalizedUrl = url.trim().toLowerCase();
+    
+    let updated;
+    if (action === "add" && !urls.includes(normalizedUrl)) {
+      updated = [...urls, normalizedUrl];
+    } else if (action === "remove") {
+      updated = urls.filter((u) => u !== normalizedUrl);
+    } else {
+      updated = urls;
     }
-  } catch (err) {
-    console.warn("injectCSS error:", err);
+
+    await StorageManager.setExcludedUrls(updated);
+    return updated;
   }
-};
 
-const injectFrameCSS = async (tabId, frameId) => {
-  try {
-    await chrome.scripting.insertCSS({
-      target: { tabId, frameIds: [frameId] },
-      files: [CSS_FILES.BLUR],
-    });
-  } catch (err) {
-    console.warn("injectCSS error:", err);
+  static async isUrlExcluded(url, excludeLocalhost = false) {
+    if (!url) return true;
+    
+    const urls = await StorageManager.getExcludedUrls();
+    const list = excludeLocalhost ? urls : urls.filter((u) => u !== "localhost");
+    
+    return list.some((u) => url.toLowerCase().includes(u));
   }
-};
 
-const applyBlurEffect = async (tabId, enable) => {
-  const blurIntensity = await loadBlurIntensity();
-  if (enable) {
-    await injectCSS(tabId);
-    await setBlurIntensity(tabId, blurIntensity);
-  } else {
-    await setBlurIntensity(tabId, 0);
+  static shouldProcessUrl(url) {
+    return url && (url.startsWith("http") || url.startsWith("https"));
   }
-};
 
-const toggleBlurEffect = async (tabId) => {
-  const prevState = await chrome.action.getBadgeText({ tabId });
-  const newState =
-    prevState === BADGE_STATES.ON ? BADGE_STATES.OFF : BADGE_STATES.ON;
-  await setBadgeText(tabId, newState);
-  await applyBlurEffect(tabId, newState === BADGE_STATES.ON);
-  return newState;
-};
+  static extractHostname(url) {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return null;
+    }
+  }
+}
 
-const setBackgroundBlurEffect = async (tabId, state = true) => {
-  let newState = state;
-  const [res] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (newState) => {
+// === SCRIPT INJECTOR ===
+class ScriptInjector {
+  static async executeScript(tabId, func, args = [], options = {}) {
+    try {
+      const target = { tabId, ...options };
+      return await chrome.scripting.executeScript({
+        target,
+        func,
+        args
+      });
+    } catch (error) {
+      console.warn(`Script execution failed for tab ${tabId}:`, error);
+      return null;
+    }
+  }
+
+  static async insertCSS(tabId, files, options = {}) {
+    try {
+      const target = { tabId, ...options };
+      await chrome.scripting.insertCSS({ target, files });
+      return true;
+    } catch (error) {
+      console.warn(`CSS insertion failed for tab ${tabId}:`, error);
+      return false;
+    }
+  }
+
+  static async injectBlurCSS(tabId) {
+    const [result] = await this.executeScript(tabId, () => {
+      if (window["__blurCSSInjected"]) return true;
+      window["__blurCSSInjected"] = true;
+      return false;
+    }) || [{ result: false }];
+
+    if (!result.result) {
+      return await this.insertCSS(tabId, [CONFIG.CSS_FILES.BLUR]);
+    }
+    return true;
+  }
+
+  static async injectFrameCSS(tabId, frameId) {
+    return await this.insertCSS(tabId, [CONFIG.CSS_FILES.BLUR], { frameIds: [frameId] });
+  }
+
+  static async setBlurIntensity(tabId, intensity, frameId = null) {
+    const options = frameId ? { frameIds: [frameId] } : { allFrames: true };
+    
+    return await this.executeScript(tabId, (val) => {
+      document.documentElement.style.setProperty("--blur-intensity", `${val}px`);
+    }, [intensity], options);
+  }
+}
+
+// === BLUR EFFECT MANAGER ===
+class BlurEffectManager {
+  static async setBadgeText(tabId, text) {
+    try {
+      await chrome.action.setBadgeText({ tabId, text });
+    } catch (error) {
+      console.warn(`Failed to set badge text for tab ${tabId}:`, error);
+    }
+  }
+
+  static async getBadgeText(tabId) {
+    try {
+      return await chrome.action.getBadgeText({ tabId });
+    } catch (error) {
+      console.warn(`Failed to get badge text for tab ${tabId}:`, error);
+      return CONFIG.BADGE_STATES.OFF;
+    }
+  }
+
+  static async applyBlurEffect(tabId, enable) {
+    const blurIntensity = await StorageManager.getBlurIntensity();
+    
+    if (enable) {
+      await ScriptInjector.injectBlurCSS(tabId);
+      await ScriptInjector.setBlurIntensity(tabId, blurIntensity);
+    } else {
+      await ScriptInjector.setBlurIntensity(tabId, 0);
+    }
+  }
+
+  static async toggleBlurEffect(tabId) {
+    const prevState = await this.getBadgeText(tabId);
+    const newState = prevState === CONFIG.BADGE_STATES.ON 
+      ? CONFIG.BADGE_STATES.OFF 
+      : CONFIG.BADGE_STATES.ON;
+    
+    await this.setBadgeText(tabId, newState);
+    await this.applyBlurEffect(tabId, newState === CONFIG.BADGE_STATES.ON);
+    
+    return newState;
+  }
+
+  static async enableBlurEffect(tabId) {
+    const blurIntensity = await StorageManager.getBlurIntensity();
+    const backgroundBlurState = await StorageManager.getBackgroundBlurStatus();
+    
+    await this.setBadgeText(tabId, CONFIG.BADGE_STATES.ON);
+    await ScriptInjector.injectBlurCSS(tabId);
+    await ScriptInjector.setBlurIntensity(tabId, blurIntensity);
+    await BackgroundBlurManager.setBackgroundBlurEffect(tabId, backgroundBlurState);
+  }
+
+  static async disableBlurEffect(tabId) {
+    await this.setBadgeText(tabId, CONFIG.BADGE_STATES.OFF);
+    await ScriptInjector.setBlurIntensity(tabId, 0);
+  }
+
+  static async enableFrameBlurEffect(tabId, frameId) {
+    const blurIntensity = await StorageManager.getBlurIntensity();
+    await ScriptInjector.injectFrameCSS(tabId, frameId);
+    await ScriptInjector.setBlurIntensity(tabId, blurIntensity, frameId);
+  }
+}
+
+// === BACKGROUND BLUR MANAGER ===
+class BackgroundBlurManager {
+  static async setBackgroundBlurEffect(tabId, state = true) {
+    await ScriptInjector.executeScript(tabId, (newState) => {
       function hasBackgroundImage(element) {
         const computedStyle = window.getComputedStyle(element);
         const backgroundImage = computedStyle.backgroundImage;
-
-        // Check if background-image is set and not 'none'
         return backgroundImage && backgroundImage !== "none";
       }
 
@@ -158,21 +224,13 @@ const setBackgroundBlurEffect = async (tabId, state = true) => {
             if (entry.isIntersecting) {
               const element = entry.target;
 
-              // Check if the element now has a background image
-              if (
-                hasBackgroundImage(element) &&
-                !element.classList.contains("has-background-image")
-              ) {
+              if (hasBackgroundImage(element) && !element.classList.contains("has-background-image")) {
                 element.classList.add("has-background-image");
               }
 
-              // Also check all child elements
               const childElements = element.querySelectorAll("*");
               childElements.forEach((child) => {
-                if (
-                  hasBackgroundImage(child) &&
-                  !child.classList.contains("has-background-image")
-                ) {
+                if (hasBackgroundImage(child) && !child.classList.contains("has-background-image")) {
                   child.classList.add("has-background-image");
                 }
               });
@@ -181,10 +239,11 @@ const setBackgroundBlurEffect = async (tabId, state = true) => {
         },
         {
           root: null,
-          rootMargin: "50px", // Start observing 50px before element comes into view
+          rootMargin: "50px",
           threshold: 0.1,
         }
       );
+
       if (newState && !window["__BackgroundBlurEnabled"]) {
         const allElements = document.querySelectorAll("*");
         allElements.forEach((element) => {
@@ -192,6 +251,7 @@ const setBackgroundBlurEffect = async (tabId, state = true) => {
         });
         window["__BackgroundBlurEnabled"] = true;
       }
+
       if (!newState && window["__BackgroundBlurEnabled"]) {
         intersectionObserver.disconnect();
         const allElements = document.querySelectorAll("*");
@@ -202,219 +262,260 @@ const setBackgroundBlurEffect = async (tabId, state = true) => {
         });
         window["__BackgroundBlurEnabled"] = false;
       }
-    },
-    args: [newState],
-  });
+    }, [state]);
 
-  await saveBackgroundBlurStatus(newState);
+    await StorageManager.setBackgroundBlurStatus(state);
+    return state;
+  }
 
-  return newState;
-};
+  static async toggleBackgroundBlurEffect(tabId) {
+    const currentState = await StorageManager.getBackgroundBlurStatus();
+    return await this.setBackgroundBlurEffect(tabId, !currentState);
+  }
+}
 
-const enableBlurEffect = async (tabId) => {
-  const blurIntensity = await loadBlurIntensity();
-  await setBadgeText(tabId, BADGE_STATES.ON);
-  await injectCSS(tabId);
-  await setBlurIntensity(tabId, blurIntensity);
-  const backgroundBlurState = await loadBackgroundBlurStatus();
-  await setBackgroundBlurEffect(tabId, backgroundBlurState);
-};
-
-const disableBlurEffect = async (tabId) => {
-  await setBadgeText(tabId, BADGE_STATES.OFF);
-  await setBlurIntensity(tabId, 0);
-};
-
-const enableFrameBlurEffect = async (tabId, frameId) => {
-  const blurIntensity = await loadBlurIntensity();
-  await injectFrameCSS(tabId, frameId);
-  await setFrameBlurIntensity(tabId, frameId, blurIntensity);
-};
-
-const getCurrentTab = async () => {
-  let queryOptions = { active: true, lastFocusedWindow: true };
-  let [tab] = await chrome.tabs.query(queryOptions);
-  return tab;
-};
-
-// --- Message Listener ---
-chrome.runtime.onMessage.addListener((req, _, sendRes) => {
-  (async () => {
+// === TAB MANAGER ===
+class TabManager {
+  static async getCurrentTab() {
     try {
-      switch (req.action) {
-        case "getExcludedUrls":
-          return sendRes({ success: true, urls: await loadExcludedUrls() });
-        case "addExcludedUrl":
-          return sendRes({
-            success: true,
-            urls: await updateExcludedUrls(req.url, "add"),
-          });
-        case "removeExcludedUrl":
-          return sendRes({
-            success: true,
-            urls: await updateExcludedUrls(req.url, "remove"),
-          });
-        case "addCurrentUrl": {
-          const tab = await getCurrentTab();
-          if (!tab.url)
-            return sendRes({ success: false, error: "No valid URL found" });
-
-          const hostname = new URL(tab.url).hostname;
-          const urls = await updateExcludedUrls(hostname, "add");
-
-          const badge = await chrome.action.getBadgeText({ tabId: tab.id });
-          if (badge === BADGE_STATES.ON) {
-            await setBadgeText(tab.id, BADGE_STATES.OFF);
-            await applyBlurEffect(tab.id, false);
-          }
-          return sendRes({ success: true, urls, addedUrl: hostname });
-        }
-        case "toggleBlur":
-          if (!req.tabId)
-            return sendRes({ success: false, error: "No tab ID provided" });
-          const status = await toggleBlurEffect(req.tabId);
-          return sendRes({ success: true, newStatus: status });
-        case "getBackgroundBlurStatus":
-          return sendRes({
-            success: true,
-            backgroundBlurStatus: await loadBackgroundBlurStatus(),
-          });
-        case "toggleBackgroundBlur":
-          const backgroundBlurState = await loadBackgroundBlurStatus();
-          return sendRes({
-            success: true,
-            newStatus: await setBackgroundBlurEffect(
-              req.tabId,
-              !backgroundBlurState
-            ),
-          });
-        case "enableBlur":
-          if (!req.tabId)
-            return sendRes({ success: false, error: "No tab ID provided" });
-          await enableBlurEffect(req.tabId);
-          return sendRes({ success: true });
-        case "getBlurIntensity":
-          const intensity = await loadBlurIntensity();
-          return sendRes({ success: true, intensity });
-        case "setBlurIntensity":
-          const tab = await getCurrentTab();
-          await setBadgeText(tab.id, BADGE_STATES.ON);
-          saveBlurIntensity(req.intensity);
-          if (!(await isUrlExcluded(tab.url, true))) {
-            await setBlurIntensity(tab.id, req.intensity);
-          }
-          return sendRes({ success: true });
-        default:
-          return sendRes({ success: false, error: "Unknown action" });
-      }
-    } catch (err) {
-      return sendRes({ success: false, error: err.message });
-    }
-  })();
-  return true;
-});
-
-// --- Lifecycle Events ---
-chrome.runtime.onInstalled.addListener(async () => {
-  await chrome.action.setBadgeText({ text: BADGE_STATES.OFF });
-  const existing = await chrome.storage.sync.get(STORAGE_KEYS.EXCLUDED_URLS);
-  if (!existing[STORAGE_KEYS.EXCLUDED_URLS])
-    await saveExcludedUrls(DEFAULT_EXCLUDED_URLS);
-});
-
-chrome.runtime.onStartup.addListener(async () => {
-  const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) {
-    if (shouldProcess(tab.url) && !(await isUrlExcluded(tab.url, true))) {
-      await setBadgeText(tab.id, BADGE_STATES.OFF);
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      return tab;
+    } catch (error) {
+      console.warn("Failed to get current tab:", error);
+      return null;
     }
   }
-});
 
-chrome.commands.onCommand.addListener(async (cmd) => {
-  if (cmd !== "toggle-blur") return;
-  const tab = await getCurrentTab();
-  if (!tab || !tab.url) return;
+  static async getTab(tabId) {
+    try {
+      return await chrome.tabs.get(tabId);
+    } catch (error) {
+      console.warn(`Failed to get tab ${tabId}:`, error);
+      return null;
+    }
+  }
 
-  const isExcluded = await isUrlExcluded(tab.url);
-  const hostname = new URL(tab.url).hostname;
+  static async handleTabNavigation(tabId, url, frameId = 0) {
+    if (!URLManager.shouldProcessUrl(url)) return;
 
-  if (isExcluded) {
-    await updateExcludedUrls(hostname, "remove");
-    await enableBlurEffect(tab.id);
-    chrome.runtime
-      .sendMessage({
+    const isExcluded = await URLManager.isUrlExcluded(url);
+    
+    if (!isExcluded) {
+      if (frameId === 0) {
+        await BlurEffectManager.enableBlurEffect(tabId);
+      } else {
+        await BlurEffectManager.enableFrameBlurEffect(tabId, frameId);
+      }
+    } else {
+      await BlurEffectManager.disableBlurEffect(tabId);
+    }
+  }
+
+  static async sendMessageToPopup(message) {
+    try {
+      await chrome.runtime.sendMessage(message);
+    } catch (error) {
+      // Popup might not be open, ignore error
+    }
+  }
+}
+
+// === MESSAGE HANDLER ===
+class MessageHandler {
+  static async handleMessage(request, sender, sendResponse) {
+    try {
+      const response = await this.processMessage(request);
+      sendResponse(response);
+    } catch (error) {
+      sendResponse({ success: false, error: error.message });
+    }
+  }
+
+  static async processMessage(req) {
+    const handlers = {
+      getExcludedUrls: async () => ({ success: true, urls: await StorageManager.getExcludedUrls() }),
+      
+      addExcludedUrl: async () => ({ 
+        success: true, 
+        urls: await URLManager.updateExcludedUrls(req.url, "add") 
+      }),
+      
+      removeExcludedUrl: async () => ({ 
+        success: true, 
+        urls: await URLManager.updateExcludedUrls(req.url, "remove") 
+      }),
+      
+      addCurrentUrl: async () => {
+        const tab = await TabManager.getCurrentTab();
+        if (!tab?.url) {
+          return { success: false, error: "No valid URL found" };
+        }
+
+        const hostname = URLManager.extractHostname(tab.url);
+        if (!hostname) {
+          return { success: false, error: "Invalid URL" };
+        }
+
+        const urls = await URLManager.updateExcludedUrls(hostname, "add");
+        
+        const badge = await BlurEffectManager.getBadgeText(tab.id);
+        if (badge === CONFIG.BADGE_STATES.ON) {
+          await BlurEffectManager.setBadgeText(tab.id, CONFIG.BADGE_STATES.OFF);
+          await BlurEffectManager.applyBlurEffect(tab.id, false);
+        }
+        
+        return { success: true, urls, addedUrl: hostname };
+      },
+      
+      toggleBlur: async () => {
+        if (!req.tabId) {
+          return { success: false, error: "No tab ID provided" };
+        }
+        const status = await BlurEffectManager.toggleBlurEffect(req.tabId);
+        return { success: true, newStatus: status };
+      },
+      
+      getBackgroundBlurStatus: async () => ({
+        success: true,
+        backgroundBlurStatus: await StorageManager.getBackgroundBlurStatus()
+      }),
+      
+      toggleBackgroundBlur: async () => {
+        const newStatus = await BackgroundBlurManager.toggleBackgroundBlurEffect(req.tabId);
+        return { success: true, newStatus };
+      },
+      
+      enableBlur: async () => {
+        if (!req.tabId) {
+          return { success: false, error: "No tab ID provided" };
+        }
+        await BlurEffectManager.enableBlurEffect(req.tabId);
+        return { success: true };
+      },
+      
+      getBlurIntensity: async () => ({
+        success: true,
+        intensity: await StorageManager.getBlurIntensity()
+      }),
+      
+      setBlurIntensity: async () => {
+        const tab = await TabManager.getCurrentTab();
+        if (!tab) {
+          return { success: false, error: "No active tab found" };
+        }
+
+        await BlurEffectManager.setBadgeText(tab.id, CONFIG.BADGE_STATES.ON);
+        await StorageManager.setBlurIntensity(req.intensity);
+        
+        if (!(await URLManager.isUrlExcluded(tab.url, true))) {
+          await ScriptInjector.setBlurIntensity(tab.id, req.intensity);
+        }
+        
+        return { success: true };
+      }
+    };
+
+    const handler = handlers[req.action];
+    if (!handler) {
+      return { success: false, error: "Unknown action" };
+    }
+
+    return await handler();
+  }
+}
+
+// === EVENT HANDLERS ===
+class EventHandlers {
+  static async handleInstall() {
+    await chrome.action.setBadgeText({ text: CONFIG.BADGE_STATES.OFF });
+    
+    const existing = await chrome.storage.sync.get(CONFIG.STORAGE_KEYS.EXCLUDED_URLS);
+    if (!existing[CONFIG.STORAGE_KEYS.EXCLUDED_URLS]) {
+      await StorageManager.setExcludedUrls(CONFIG.DEFAULTS.EXCLUDED_URLS);
+    }
+  }
+
+  static async handleStartup() {
+    const tab = await TabManager.getCurrentTab();
+    if (!tab?.url) return;
+    if (URLManager.shouldProcessUrl(tab.url) && !(await URLManager.isUrlExcluded(tab.url, true))) {
+      await BlurEffectManager.setBadgeText(tab.id, CONFIG.BADGE_STATES.ON);
+    }
+  }
+
+  static async handleCommand(command) {
+    if (command !== "toggle-blur") return;
+    
+    const tab = await TabManager.getCurrentTab();
+    if (!tab?.url) return;
+
+    const isExcluded = await URLManager.isUrlExcluded(tab.url);
+    const hostname = URLManager.extractHostname(tab.url);
+    
+    if (!hostname) return;
+
+    if (isExcluded) {
+      await URLManager.updateExcludedUrls(hostname, "remove");
+      await BlurEffectManager.enableBlurEffect(tab.id);
+      
+      await TabManager.sendMessageToPopup({
         action: "siteRemovedFromExclusion",
         tabId: tab.id,
         removedUrl: hostname,
-      })
-      .catch(() => {});
-  } else {
-    const status = await toggleBlurEffect(tab.id);
-    chrome.runtime
-      .sendMessage({
+      });
+    } else {
+      const status = await BlurEffectManager.toggleBlurEffect(tab.id);
+      
+      await TabManager.sendMessageToPopup({
         action: "blurStateChanged",
         tabId: tab.id,
         newStatus: status,
-      })
-      .catch(() => {});
-  }
-});
-
-const shouldProcess = (url) =>
-  url && (url.startsWith("http") || url.startsWith("https"));
-
-chrome.webNavigation.onCommitted.addListener(
-  async ({ tabId, frameId, url }) => {
-    try {
-      const isExcluded = await isUrlExcluded(url);
-      if (shouldProcess(url)) {
-        if (!isExcluded) {
-          if (frameId == 0) {
-            await enableBlurEffect(tabId);
-          } else {
-            await enableFrameBlurEffect(tabId, frameId);
-          }
-        } else {
-          await disableBlurEffect(tabId);
-        }
-      }
-    } catch (error) {}
-  }
-);
-
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  const tab = await chrome.tabs.get(tabId);
-  const isExcluded = await isUrlExcluded(tab.url);
-  if (shouldProcess(tab.url)) {
-    if (!isExcluded) {
-      await enableBlurEffect(tabId);
-    } else {
-      await disableBlurEffect(tabId);
+      });
     }
   }
-  const excludedUrls = await loadExcludedUrls();
-  const blurIntensity = await loadBlurIntensity();
-  const backgroundBlurStatus = await loadBackgroundBlurStatus();
 
-  chrome.runtime
-    .sendMessage({
+  static async handleWebNavigation({ tabId, frameId, url }) {
+    await TabManager.handleTabNavigation(tabId, url, frameId);
+  }
+
+  static async handleTabActivated({ tabId }) {
+    const tab = await TabManager.getTab(tabId);
+    if (!tab) return;
+
+    await TabManager.handleTabNavigation(tabId, tab.url);
+    
+    // Send settings to popup
+    const [excludedUrls, blurIntensity, backgroundBlurStatus] = await Promise.all([
+      StorageManager.getExcludedUrls(),
+      StorageManager.getBlurIntensity(),
+      StorageManager.getBackgroundBlurStatus()
+    ]);
+
+    await TabManager.sendMessageToPopup({
       action: "loadSettings",
       tabId: tab.id,
       excludedUrls,
       blurIntensity,
       backgroundBlurStatus,
-    })
-    .catch(() => {});
-});
+    });
+  }
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && shouldProcess(tab.url)) {
-    const isExcluded = await isUrlExcluded(tab.url);
-    if (!isExcluded) {
-      await enableBlurEffect(tabId);
-    } else {
-      await disableBlurEffect(tabId);
+  static async handleTabUpdated(tabId, changeInfo, tab) {
+    if (changeInfo.status === "loading" && URLManager.shouldProcessUrl(tab.url)) {
+      await TabManager.handleTabNavigation(tabId, tab.url);
     }
   }
+}
+
+// === EVENT LISTENERS ===
+chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+  MessageHandler.handleMessage(req, sender, sendResponse);
+  return true; // Keep message channel open for async response
 });
+
+chrome.runtime.onInstalled.addListener(EventHandlers.handleInstall);
+chrome.runtime.onStartup.addListener(EventHandlers.handleStartup);
+chrome.commands.onCommand.addListener(EventHandlers.handleCommand);
+chrome.webNavigation.onCommitted.addListener(EventHandlers.handleWebNavigation);
+chrome.tabs.onActivated.addListener(EventHandlers.handleTabActivated);
+chrome.tabs.onUpdated.addListener(EventHandlers.handleTabUpdated);
