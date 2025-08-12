@@ -3,7 +3,8 @@ video,
 div[style*="url"],
 span[style*="url"],
 a[style*="url"],
-i[style*="url"] {
+i[style*="url"],
+canvas {
   filter: blur(var(--blur-intensity)) !important;
 }
 
@@ -12,11 +13,17 @@ video:hover,
 div[style*="url"]:hover,
 span[style*="url"]:hover,
 a[style*="url"]:hover,
-i[style*="url"]:hover {
+i[style*="url"]:hover,
+canvas:hover {
   filter: blur(0px) !important;
   transition: filter 0.3s ease !important;
 }
 
 .has-background-image {
   filter: blur(var(--blur-intensity)) !important;
+}
+
+
+:root{
+  --blur-intensity: 50px;
 }
