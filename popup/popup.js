@@ -6,6 +6,7 @@ class PopupManager {
       currentTabId: null,
       blurStatus: "OFF",
       backgroundBlurStatus: false,
+      canvasBlurStatus: true,
       blurIntensity: 50,
       excludedUrls: ["chrome://", "meet.google.com", "localhost"]
     };
@@ -31,9 +32,10 @@ class PopupManager {
   cacheElements() {
     const elementIds = [
       'addUrlBtn', 'newUrlInput', 'toggleCurrentSite', 'toggleBlurSwitch',
-      'toggleBackgroundBlurSwitch', 'intensitySlider', 'currentUrl',
-      'currentStatus', 'toggleBlurLabel', 'toggleBackgroundBlurLabel',
-      'excludedList', 'intensityValue', 'previewText', 'message'
+      'toggleBackgroundBlurSwitch', 'toggleCanvasBlurSwitch', 'intensitySlider', 'currentUrl',
+      'currentStatus', 'toggleBlurLabel', 'toggleBackgroundBlurLabel', 'toggleCanvasBlurLabel',
+      'excludedList', 'intensityValue', 'previewText', 'message', 'mainTab', 'settingsTab',
+      'mainTabContent', 'settingsTabContent'
     ];
 
     elementIds.forEach(id => {
@@ -46,7 +48,8 @@ class PopupManager {
       this.loadCurrentTab(),
       this.loadExcludedUrls(),
       this.loadBlurIntensity(),
-      this.loadBackgroundBlurState()
+      this.loadBackgroundBlurState(),
+      this.loadCanvasBlurState()
     ]);
   }
 
@@ -87,6 +90,13 @@ class PopupManager {
     const response = await this.sendMessage({ action: "getBackgroundBlurStatus" });
     if (response.success) {
       this.state.backgroundBlurStatus = response.backgroundBlurStatus;
+    }
+  }
+
+  async loadCanvasBlurState() {
+    const response = await this.sendMessage({ action: "getCanvasBlurStatus" });
+    if (response.success) {
+      this.state.canvasBlurStatus = response.canvasBlurStatus;
     }
   }
 
@@ -163,6 +173,30 @@ class PopupManager {
       }
     } catch (error) {
       this.showMessage("Failed to toggle background blur", "error");
+    }
+  }
+
+  async toggleCanvasBlur() {
+    if (!this.validateActiveTab()) return;
+
+    try {
+      const response = await this.sendMessage({
+        action: "toggleCanvasBlur",
+        tabId: this.state.currentTabId
+      });
+
+      if (response.success) {
+        this.state.canvasBlurStatus = response.newStatus;
+        this.showMessage(
+          `Canvas Blur ${this.state.canvasBlurStatus ? "enabled" : "disabled"}`,
+          "success"
+        );
+        this.render();
+      } else {
+        this.showMessage(response.error || "Failed to toggle canvas blur", "error");
+      }
+    } catch (error) {
+      this.showMessage("Failed to toggle canvas blur", "error");
     }
   }
 
@@ -280,7 +314,10 @@ class PopupManager {
       { element: 'toggleCurrentSite', event: 'click', handler: () => this.toggleCurrentSite() },
       { element: 'toggleBlurSwitch', event: 'change', handler: () => this.toggleBlur() },
       { element: 'toggleBackgroundBlurSwitch', event: 'change', handler: () => this.toggleBackgroundBlur() },
-      { element: 'intensitySlider', event: 'input', handler: (e) => this.setBlurIntensity(e.target.value) }
+      { element: 'toggleCanvasBlurSwitch', event: 'change', handler: () => this.toggleCanvasBlur() },
+      { element: 'intensitySlider', event: 'input', handler: (e) => this.setBlurIntensity(e.target.value) },
+      { element: 'mainTab', event: 'click', handler: () => this.switchTab('main') },
+      { element: 'settingsTab', event: 'click', handler: () => this.switchTab('settings') }
     ];
 
     eventMappings.forEach(({ element, event, handler }) => {
@@ -316,6 +353,7 @@ class PopupManager {
         loadSettings: () => {
           this.state.excludedUrls = request.excludedUrls;
           this.state.backgroundBlurStatus = request.backgroundBlurStatus;
+          this.state.canvasBlurStatus = request.canvasBlurStatus;
           this.state.blurIntensity = request.blurIntensity;
           this.render();
         }
@@ -335,6 +373,7 @@ class PopupManager {
     this.renderExcludedList();
     this.renderBlurIntensity();
     this.renderBackgroundBlur();
+    this.renderCanvasBlur();
   }
 
   renderCurrentSite() {
@@ -370,7 +409,6 @@ class PopupManager {
         buttonText: "Remove from Excluded",
         buttonClass: "btn btn-danger btn-small",
         blurSwitchChecked: false,
-        backgroundBlurDisplay: "none",
         blurLabelText: "Blur (Excluded)"
       };
     }
@@ -381,7 +419,6 @@ class PopupManager {
       buttonText: "Add to Excluded",
       buttonClass: "btn btn-secondary btn-small",
       blurSwitchChecked: this.state.blurStatus === "ON",
-      backgroundBlurDisplay: this.state.blurStatus === "OFF" ? "none" : "flex",
       blurLabelText: this.state.blurStatus === "ON" ? "Blur Enabled" : "Blur Disabled"
     };
   }
@@ -399,10 +436,6 @@ class PopupManager {
       
       if (this.elements.toggleBlurLabel) {
         this.elements.toggleBlurLabel.textContent = config.blurLabelText;
-      }
-      
-      if (this.elements.toggleBackgroundBlurSwitch) {
-        this.elements.toggleBackgroundBlurSwitch.parentElement.style.display = config.backgroundBlurDisplay;
       }
     }
   }
@@ -449,6 +482,12 @@ class PopupManager {
       `Background Blur ${this.state.backgroundBlurStatus ? "Enabled" : "Disabled"}`;
   }
 
+  renderCanvasBlur() {
+    this.elements.toggleCanvasBlurSwitch.checked = this.state.canvasBlurStatus;
+    this.elements.toggleCanvasBlurLabel.textContent = 
+      `Canvas Blur ${this.state.canvasBlurStatus ? "Enabled" : "Disabled"}`;
+  }
+
   // === UTILITY METHODS ===
   extractHostname(url) {
     try {
@@ -492,6 +531,21 @@ class PopupManager {
       this.elements.message.textContent = "";
       this.elements.message.className = "";
     }, 3000);
+  }
+
+  // === TAB SWITCHING ===
+  switchTab(tabName) {
+    // Remove active class from all tabs and content
+    document.querySelectorAll('.tab-button').forEach(tab => {
+      tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-content').forEach(content => {
+      content.classList.remove('active');
+    });
+
+    // Add active class to selected tab and content
+    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    document.getElementById(`${tabName}TabContent`).classList.add('active');
   }
 
   escapeHtml(text) {

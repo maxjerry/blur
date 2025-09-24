@@ -13,51 +13,41 @@
     <h1>Blur Extension Settings</h1>
   </header>
 
+  <!-- Tab Navigation -->
+  <nav class="tab-navigation">
+    <button class="tab-button active" data-tab="main" id="mainTab">Main</button>
+    <button class="tab-button" data-tab="settings" id="settingsTab">Settings</button>
+  </nav>
+
   <!-- Main Content -->
   <main class="main-content">
-    <!-- Control Panel Section -->
-    <section class="section control-panel" aria-labelledby="controls-heading">
-      <h2 id="controls-heading" class="visually-hidden">Main Controls</h2>
-      
-      <!-- Blur Toggle -->
-      <div class="control-group">
-        <div class="toggle-switch" role="switch" aria-labelledby="blur-toggle-label">
-          <input 
-            type="checkbox" 
-            class="toggle-icon" 
-            id="toggleBlurSwitch"
-            aria-describedby="blur-toggle-description"
-          />
-          <label for="toggleBlurSwitch" class="toggle-label">
-            <span id="toggleBlurLabel">Blur</span>
-          </label>
+    <!-- Main Tab Content -->
+    <div class="tab-content active" id="mainTabContent">
+      <!-- Control Panel Section -->
+      <section class="section control-panel" aria-labelledby="controls-heading">
+        <h2 id="controls-heading" class="visually-hidden">Main Controls</h2>
+        
+        <!-- Blur Toggle -->
+        <div class="control-group">
+          <div class="toggle-switch" role="switch" aria-labelledby="blur-toggle-label">
+            <input 
+              type="checkbox" 
+              class="toggle-icon" 
+              id="toggleBlurSwitch"
+              aria-describedby="blur-toggle-description"
+            />
+            <label for="toggleBlurSwitch" class="toggle-label">
+              <span id="toggleBlurLabel">Blur</span>
+            </label>
+          </div>
+          <p id="blur-toggle-description" class="control-description visually-hidden">
+            Enable or disable blur effect for the current website
+          </p>
         </div>
-        <p id="blur-toggle-description" class="control-description visually-hidden">
-          Enable or disable blur effect for the current website
-        </p>
-      </div>
 
-      <!-- Background Blur Toggle -->
-      <div class="control-group">
-        <div class="toggle-switch toggle-background-blur" role="switch" aria-labelledby="bg-blur-toggle-label">
-          <input 
-            type="checkbox" 
-            class="toggle-icon" 
-            id="toggleBackgroundBlurSwitch"
-            aria-describedby="bg-blur-toggle-description"
-          />
-          <label for="toggleBackgroundBlurSwitch" class="toggle-label">
-            <span id="toggleBackgroundBlurLabel">Background Blur</span>
-          </label>
-        </div>
-        <p id="bg-blur-toggle-description" class="control-description visually-hidden">
-          Enable or disable background blur effect for images
-        </p>
-      </div>
-
-      <!-- Status Messages -->
-      <div id="message" class="message-container" role="status" aria-live="polite" aria-atomic="true"></div>
-    </section>
+        <!-- Status Messages -->
+        <div id="message" class="message-container" role="status" aria-live="polite" aria-atomic="true"></div>
+      </section>
 
     <!-- Blur Intensity Section -->
     <section class="section blur-intensity-section" aria-labelledby="intensity-heading">
@@ -104,88 +94,131 @@
       </div>
     </section>
 
-    <!-- Current Site Section -->
-    <section class="section current-site-section" aria-labelledby="current-site-heading">
-      <h2 id="current-site-heading">Current Site</h2>
-      
-      <div class="current-site">
-        <div class="site-info">
-          <div class="site-url" id="currentUrl" aria-label="Current website URL">
-            <span class="loading-text">Loading...</span>
+      <!-- Current Site Section -->
+      <section class="section current-site-section" aria-labelledby="current-site-heading">
+        <h2 id="current-site-heading">Current Site</h2>
+        
+        <div class="current-site">
+          <div class="site-info">
+            <div class="site-url" id="currentUrl" aria-label="Current website URL">
+              <span class="loading-text">Loading...</span>
+            </div>
+            <div class="site-status">
+              <span class="status-label">Status:</span>
+              <span class="status" id="currentStatus" aria-live="polite">Loading...</span>
+            </div>
           </div>
-          <div class="site-status">
-            <span class="status-label">Status:</span>
-            <span class="status" id="currentStatus" aria-live="polite">Loading...</span>
+          
+          <div class="site-actions">
+            <button 
+              class="btn btn-secondary btn-small" 
+              id="toggleCurrentSite"
+              aria-describedby="toggle-site-description"
+            >
+              <span class="button-text">Add to Excluded</span>
+            </button>
+            <p id="toggle-site-description" class="visually-hidden">
+              Add or remove current site from excluded URLs list
+            </p>
           </div>
         </div>
+      </section>
+    </div>
+
+    <!-- Settings Tab Content -->
+    <div class="tab-content" id="settingsTabContent">
+      <!-- Background Blur Toggle -->
+      <section class="section">
+        <h2>Blur Settings</h2>
+        <div class="control-group">
+          <div class="toggle-switch toggle-background-blur" role="switch" aria-labelledby="bg-blur-toggle-label">
+            <input 
+              type="checkbox" 
+              class="toggle-icon" 
+              id="toggleBackgroundBlurSwitch"
+              aria-describedby="bg-blur-toggle-description"
+            />
+            <label for="toggleBackgroundBlurSwitch" class="toggle-label">
+              <span id="toggleBackgroundBlurLabel">Background Blur</span>
+            </label>
+          </div>
+          <p id="bg-blur-toggle-description" class="control-description visually-hidden">
+            Enable or disable background blur effect for images
+          </p>
+        </div>
+
+        <!-- Canvas Blur Toggle -->
+        <div class="control-group">
+          <div class="toggle-switch toggle-canvas-blur" role="switch" aria-labelledby="canvas-blur-toggle-label">
+            <input 
+              type="checkbox" 
+              class="toggle-icon" 
+              id="toggleCanvasBlurSwitch"
+              aria-describedby="canvas-blur-toggle-description"
+            />
+            <label for="toggleCanvasBlurSwitch" class="toggle-label">
+              <span id="toggleCanvasBlurLabel">Canvas Blur</span>
+            </label>
+          </div>
+          <p id="canvas-blur-toggle-description" class="control-description visually-hidden">
+            Enable or disable blur effect for canvas elements
+          </p>
+        </div>
+      </section>
+
+      <!-- Add URL Section -->
+      <section class="section add-url-section" aria-labelledby="add-url-heading">
+        <h2 id="add-url-heading">Add Excluded URL</h2>
         
-        <div class="site-actions">
+        <form class="add-url-form" role="form" aria-label="Add new excluded URL">
+          <div class="input-group">
+            <label for="newUrlInput" class="visually-hidden">
+              Enter URL or domain to exclude
+            </label>
+            <input 
+              type="text" 
+              class="add-url-input" 
+              id="newUrlInput" 
+              placeholder="Enter URL or domain (e.g., example.com)"
+              aria-describedby="url-input-help"
+              autocomplete="url"
+            />
+            <p id="url-input-help" class="input-help visually-hidden">
+              Enter a URL or domain name to exclude from blur effects
+            </p>
+          </div>
+          
           <button 
-            class="btn btn-secondary btn-small" 
-            id="toggleCurrentSite"
-            aria-describedby="toggle-site-description"
+            type="submit" 
+            class="btn btn-primary" 
+            id="addUrlBtn"
+            aria-describedby="add-btn-description"
           >
-            <span class="button-text">Add to Excluded</span>
+            <span class="button-text">Add URL</span>
           </button>
-          <p id="toggle-site-description" class="visually-hidden">
-            Add or remove current site from excluded URLs list
+          <p id="add-btn-description" class="visually-hidden">
+            Add the entered URL to the excluded list
           </p>
-        </div>
-      </div>
-    </section>
+        </form>
+      </section>
 
-    <!-- Add URL Section -->
-    <section class="section add-url-section" aria-labelledby="add-url-heading">
-      <h2 id="add-url-heading">Add Excluded URL</h2>
-      
-      <form class="add-url-form" role="form" aria-label="Add new excluded URL">
-        <div class="input-group">
-          <label for="newUrlInput" class="visually-hidden">
-            Enter URL or domain to exclude
-          </label>
-          <input 
-            type="text" 
-            class="add-url-input" 
-            id="newUrlInput" 
-            placeholder="Enter URL or domain (e.g., example.com)"
-            aria-describedby="url-input-help"
-            autocomplete="url"
-          />
-          <p id="url-input-help" class="input-help visually-hidden">
-            Enter a URL or domain name to exclude from blur effects
-          </p>
-        </div>
+      <!-- Excluded URLs Section -->
+      <section class="section excluded-urls-section" aria-labelledby="excluded-urls-heading">
+        <h2 id="excluded-urls-heading">Excluded URLs</h2>
         
-        <button 
-          type="submit" 
-          class="btn btn-primary" 
-          id="addUrlBtn"
-          aria-describedby="add-btn-description"
+        <div 
+          class="excluded-list" 
+          id="excludedList" 
+          role="list" 
+          aria-label="List of excluded URLs"
+          aria-live="polite"
         >
-          <span class="button-text">Add URL</span>
-        </button>
-        <p id="add-btn-description" class="visually-hidden">
-          Add the entered URL to the excluded list
-        </p>
-      </form>
-    </section>
-
-    <!-- Excluded URLs Section -->
-    <section class="section excluded-urls-section" aria-labelledby="excluded-urls-heading">
-      <h2 id="excluded-urls-heading">Excluded URLs</h2>
-      
-      <div 
-        class="excluded-list" 
-        id="excludedList" 
-        role="list" 
-        aria-label="List of excluded URLs"
-        aria-live="polite"
-      >
-        <div class="loading-state" role="status">
-          <span class="loading-text">Loading excluded URLs...</span>
+          <div class="loading-state" role="status">
+            <span class="loading-text">Loading excluded URLs...</span>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
   </main>
 
   <!-- Footer -->

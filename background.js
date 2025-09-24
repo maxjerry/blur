@@ -6,11 +6,13 @@ const CONFIG = {
     EXCLUDED_URLS: "excludedUrls",
     BLUR_INTENSITY: "blurIntensity",
     BACKGROUND_BLUR_STATE: "backgroundBlurState",
+    CANVAS_BLUR_STATE: "canvasBlurState",
   },
   DEFAULTS: {
     EXCLUDED_URLS: ["chrome://", "meet.google.com", "localhost"],
     BLUR_INTENSITY: 50,
     BACKGROUND_BLUR_STATE: false,
+    CANVAS_BLUR_STATE: true,
   }
 };
 
@@ -47,6 +49,14 @@ class StorageManager {
 
   static async setBackgroundBlurStatus(state) {
     return this.set(CONFIG.STORAGE_KEYS.BACKGROUND_BLUR_STATE, state);
+  }
+
+  static async getCanvasBlurStatus() {
+    return this.get(CONFIG.STORAGE_KEYS.CANVAS_BLUR_STATE, CONFIG.DEFAULTS.CANVAS_BLUR_STATE);
+  }
+
+  static async setCanvasBlurStatus(state) {
+    return this.set(CONFIG.STORAGE_KEYS.CANVAS_BLUR_STATE, state);
   }
 }
 
@@ -142,6 +152,18 @@ class ScriptInjector {
       document.documentElement.style.setProperty("--blur-intensity", `${val}px`);
     }, [intensity], options);
   }
+
+  static async setCanvasBlurEnabled(tabId, enabled, frameId = null) {
+    const options = frameId ? { frameIds: [frameId] } : { allFrames: true };
+    
+    return await this.executeScript(tabId, (isEnabled) => {
+      if (isEnabled) {
+        document.documentElement.classList.add("canvas-blur-enabled");
+      } else {
+        document.documentElement.classList.remove("canvas-blur-enabled");
+      }
+    }, [enabled], options);
+  }
 }
 
 // === BLUR EFFECT MANAGER ===
@@ -174,6 +196,15 @@ class BlurEffectManager {
     }
   }
 
+  static async applyCanvasBlurEffect(tabId, enable) {
+    if (enable) {
+      await ScriptInjector.injectBlurCSS(tabId);
+      await ScriptInjector.setCanvasBlurEnabled(tabId, true);
+    } else {
+      await ScriptInjector.setCanvasBlurEnabled(tabId, false);
+    }
+  }
+
   static async toggleBlurEffect(tabId) {
     const prevState = await this.getBadgeText(tabId);
     const newState = prevState === CONFIG.BADGE_STATES.ON 
@@ -189,22 +220,28 @@ class BlurEffectManager {
   static async enableBlurEffect(tabId) {
     const blurIntensity = await StorageManager.getBlurIntensity();
     const backgroundBlurState = await StorageManager.getBackgroundBlurStatus();
+    const canvasBlurState = await StorageManager.getCanvasBlurStatus();
     
     await this.setBadgeText(tabId, CONFIG.BADGE_STATES.ON);
     await ScriptInjector.injectBlurCSS(tabId);
     await ScriptInjector.setBlurIntensity(tabId, blurIntensity);
+    await ScriptInjector.setCanvasBlurEnabled(tabId, canvasBlurState);
     await BackgroundBlurManager.setBackgroundBlurEffect(tabId, backgroundBlurState);
   }
 
   static async disableBlurEffect(tabId) {
     await this.setBadgeText(tabId, CONFIG.BADGE_STATES.OFF);
     await ScriptInjector.setBlurIntensity(tabId, 0);
+    await ScriptInjector.setCanvasBlurEnabled(tabId, false);
   }
 
   static async enableFrameBlurEffect(tabId, frameId) {
     const blurIntensity = await StorageManager.getBlurIntensity();
+    const canvasBlurEnabled = await StorageManager.getCanvasBlurStatus();
+    
     await ScriptInjector.injectFrameCSS(tabId, frameId);
     await ScriptInjector.setBlurIntensity(tabId, blurIntensity, frameId);
+    await ScriptInjector.setCanvasBlurEnabled(tabId, canvasBlurEnabled, frameId);
   }
 }
 
@@ -271,6 +308,26 @@ class BackgroundBlurManager {
   static async toggleBackgroundBlurEffect(tabId) {
     const currentState = await StorageManager.getBackgroundBlurStatus();
     return await this.setBackgroundBlurEffect(tabId, !currentState);
+  }
+}
+
+// === CANVAS BLUR MANAGER ===
+class CanvasBlurManager {
+  static async setCanvasBlurEffect(tabId, state = true) {
+    if (state) {
+      await ScriptInjector.injectBlurCSS(tabId);
+      await ScriptInjector.setCanvasBlurEnabled(tabId, true);
+    } else {
+      await ScriptInjector.setCanvasBlurEnabled(tabId, false);
+    }
+
+    await StorageManager.setCanvasBlurStatus(state);
+    return state;
+  }
+
+  static async toggleCanvasBlurEffect(tabId) {
+    const currentState = await StorageManager.getCanvasBlurStatus();
+    return await this.setCanvasBlurEffect(tabId, !currentState);
   }
 }
 
@@ -385,6 +442,16 @@ class MessageHandler {
         return { success: true, newStatus };
       },
       
+      getCanvasBlurStatus: async () => ({
+        success: true,
+        canvasBlurStatus: await StorageManager.getCanvasBlurStatus()
+      }),
+      
+      toggleCanvasBlur: async () => {
+        const newStatus = await CanvasBlurManager.toggleCanvasBlurEffect(req.tabId);
+        return { success: true, newStatus };
+      },
+      
       enableBlur: async () => {
         if (!req.tabId) {
           return { success: false, error: "No tab ID provided" };
@@ -485,10 +552,11 @@ class EventHandlers {
     await TabManager.handleTabNavigation(tabId, tab.url);
     
     // Send settings to popup
-    const [excludedUrls, blurIntensity, backgroundBlurStatus] = await Promise.all([
+    const [excludedUrls, blurIntensity, backgroundBlurStatus, canvasBlurStatus] = await Promise.all([
       StorageManager.getExcludedUrls(),
       StorageManager.getBlurIntensity(),
-      StorageManager.getBackgroundBlurStatus()
+      StorageManager.getBackgroundBlurStatus(),
+      StorageManager.getCanvasBlurStatus()
     ]);
 
     await TabManager.sendMessageToPopup({
@@ -497,6 +565,7 @@ class EventHandlers {
       excludedUrls,
       blurIntensity,
       backgroundBlurStatus,
+      canvasBlurStatus,
     });
   }
 

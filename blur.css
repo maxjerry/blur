@@ -3,8 +3,11 @@ video,
 div[style*="url"],
 span[style*="url"],
 a[style*="url"],
-i[style*="url"],
-canvas {
+i[style*="url"] {
+  filter: blur(var(--blur-intensity)) !important;
+}
+
+.canvas-blur-enabled canvas {
   filter: blur(var(--blur-intensity)) !important;
 }
 
@@ -14,7 +17,7 @@ div[style*="url"]:hover,
 span[style*="url"]:hover,
 a[style*="url"]:hover,
 i[style*="url"]:hover,
-canvas:hover {
+.canvas-blur-enabled canvas:hover {
   filter: blur(0px) !important;
   transition: filter 0.3s ease !important;
 }

@@ -24,11 +24,57 @@ body {
   color: #1a73e8;
 }
 
+/* Tab Navigation */
+.tab-navigation {
+  display: flex;
+  border-bottom: 1px solid #e1e5e9;
+  margin-bottom: 16px;
+  background: white;
+  border-radius: 8px 8px 0 0;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: #5f6368;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 8px 8px 0 0;
+}
+
+.tab-button:hover {
+  background: #f1f3f4;
+  color: #202124;
+}
+
+.tab-button.active {
+  background: #1a73e8;
+  color: white;
+  border-bottom: 2px solid #1a73e8;
+}
+
+/* Tab Content */
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
 .section {
   margin-bottom: 20px;
 }
 
 .toggle-background-blur {
+  margin-top: 20px;
+}
+
+.toggle-canvas-blur {
   margin-top: 20px;
 }
 
