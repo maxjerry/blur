@@ -12,6 +12,8 @@ class PopupManager {
     };
 
     this.elements = {};
+    this.debounceTimers = {};
+    this.isUpdatingSlider = false;
     this.init();
   }
 
@@ -21,11 +23,9 @@ class PopupManager {
       this.cacheElements();
       await this.loadInitialData();
       this.setupEventListeners();
-      this.setupMessageListener();
       this.render();
     } catch (error) {
       console.error("Failed to initialize PopupManager:", error);
-      this.showMessage("Failed to initialize popup", "error");
     }
   }
 
@@ -34,7 +34,7 @@ class PopupManager {
       'addUrlBtn', 'newUrlInput', 'toggleCurrentSite', 'toggleBlurSwitch',
       'toggleBackgroundBlurSwitch', 'toggleCanvasBlurSwitch', 'intensitySlider', 'currentUrl',
       'currentStatus', 'toggleBlurLabel', 'toggleBackgroundBlurLabel', 'toggleCanvasBlurLabel',
-      'excludedList', 'intensityValue', 'previewText', 'message', 'mainTab', 'settingsTab',
+      'excludedList', 'intensityValue', 'previewText', 'mainTab', 'settingsTab',
       'mainTabContent', 'settingsTabContent'
     ];
 
@@ -117,39 +117,98 @@ class PopupManager {
 
       if (response.success) {
         this.state.blurStatus = response.newStatus;
-        this.showMessage(
-          `Blur ${this.state.blurStatus === "ON" ? "enabled" : "disabled"}`,
-          "success"
-        );
         this.render();
       } else {
-        this.showMessage(response.error || "Failed to toggle blur", "error");
+        
       }
     } catch (error) {
-      this.showMessage("Failed to toggle blur", "error");
+      
     }
   }
 
   async setBlurIntensity(intensity) {
+    if (!this.validateActiveTab() || this.isUpdatingSlider) return;
+
+    // Parse and validate intensity value
+    const parsedIntensity = parseInt(intensity);
+    if (isNaN(parsedIntensity) || parsedIntensity < 10 || parsedIntensity > 200) {
+      console.warn("Invalid blur intensity value:", intensity);
+      return;
+    }
+
+    // Update UI immediately for responsive feedback
+    this.updateSliderUI(parsedIntensity);
+
+    // Debounce the actual API call to prevent excessive requests
+    this.debounceSliderUpdate(parsedIntensity);
+  }
+
+  debounceSliderUpdate(intensity) {
+    // Clear any existing timer
+    if (this.debounceTimers.sliderUpdate) {
+      clearTimeout(this.debounceTimers.sliderUpdate);
+    }
+
+    // Set new timer for API call
+    this.debounceTimers.sliderUpdate = setTimeout(async () => {
+      await this.updateBlurIntensityAPI(intensity);
+    }, 150); // 150ms debounce delay
+  }
+
+  updateSliderUI(intensity) {
+    // Update state and UI elements immediately
+    this.state.blurIntensity = intensity;
+    this.elements.intensityValue.textContent = `${intensity}px`;
+    this.elements.previewText.style.filter = `blur(${intensity}px)`;
+    
+    // Ensure slider value is synced
+    if (this.elements.intensitySlider.value != intensity) {
+      this.elements.intensitySlider.value = intensity;
+    }
+  }
+
+  async updateBlurIntensityAPI(intensity) {
     if (!this.validateActiveTab()) return;
 
+    this.isUpdatingSlider = true;
+    
     try {
       const response = await this.sendMessage({
         action: "setBlurIntensity",
         tabId: this.state.currentTabId,
-        intensity: parseInt(intensity)
+        intensity: intensity
       });
 
       if (response.success) {
         this.state.blurStatus = "ON";
-        this.state.blurIntensity = parseInt(intensity);
-        this.render();
+        this.state.blurIntensity = intensity;
+        // Re-render other components that might depend on blur state
+        this.renderCurrentSite();
+        this.renderBackgroundBlur();
+        this.renderCanvasBlur();
       } else {
-        this.showMessage(response.error || "Failed to set blur intensity", "error");
+        console.error("Failed to set blur intensity:", response.error);
+        // Revert to previous state if API call failed
+        this.loadBlurIntensity();
       }
     } catch (error) {
-      this.showMessage("Failed to set blur intensity", "error");
+      console.error("Error setting blur intensity:", error);
+      // Revert to previous state if API call failed
+      this.loadBlurIntensity();
+    } finally {
+      this.isUpdatingSlider = false;
     }
+  }
+
+  forceSliderUpdate(intensity) {
+    // Cancel any pending debounced update
+    if (this.debounceTimers.sliderUpdate) {
+      clearTimeout(this.debounceTimers.sliderUpdate);
+      this.debounceTimers.sliderUpdate = null;
+    }
+    
+    // Force immediate API update
+    this.updateBlurIntensityAPI(parseInt(intensity));
   }
 
   async toggleBackgroundBlur() {
@@ -163,16 +222,12 @@ class PopupManager {
 
       if (response.success) {
         this.state.backgroundBlurStatus = response.newStatus;
-        this.showMessage(
-          `Background Blur ${this.state.backgroundBlurStatus ? "enabled" : "disabled"}`,
-          "success"
-        );
         this.render();
       } else {
-        this.showMessage(response.error || "Failed to toggle background blur", "error");
+        
       }
     } catch (error) {
-      this.showMessage("Failed to toggle background blur", "error");
+      
     }
   }
 
@@ -187,16 +242,12 @@ class PopupManager {
 
       if (response.success) {
         this.state.canvasBlurStatus = response.newStatus;
-        this.showMessage(
-          `Canvas Blur ${this.state.canvasBlurStatus ? "enabled" : "disabled"}`,
-          "success"
-        );
         this.render();
       } else {
-        this.showMessage(response.error || "Failed to toggle canvas blur", "error");
+        
       }
     } catch (error) {
-      this.showMessage("Failed to toggle canvas blur", "error");
+      
     }
   }
 
@@ -205,7 +256,7 @@ class PopupManager {
     const url = this.elements.newUrlInput.value.trim();
 
     if (!url) {
-      this.showMessage("Please enter a URL or domain", "error");
+      
       return;
     }
 
@@ -218,13 +269,13 @@ class PopupManager {
       if (response.success) {
         this.state.excludedUrls = response.urls;
         this.elements.newUrlInput.value = "";
-        this.showMessage(`Added "${url}" to excluded URLs`, "success");
+        
         this.render();
       } else {
-        this.showMessage(response.error || "Failed to add URL", "error");
+        
       }
     } catch (error) {
-      this.showMessage("Failed to add URL", "error");
+      
     }
   }
 
@@ -237,7 +288,7 @@ class PopupManager {
 
       if (response.success) {
         this.state.excludedUrls = response.urls;
-        this.showMessage(`Removed "${url}" from excluded URLs`, "success");
+        
 
         if (this.isUrlMatchingCurrentSite(url)) {
           await this.enableBlurForCurrentSite();
@@ -245,16 +296,16 @@ class PopupManager {
 
         this.render();
       } else {
-        this.showMessage(response.error || "Failed to remove URL", "error");
+        
       }
     } catch (error) {
-      this.showMessage("Failed to remove URL", "error");
+      
     }
   }
 
   async toggleCurrentSite() {
     if (!this.state.currentHostname) {
-      this.showMessage("No valid hostname found", "error");
+      
       return;
     }
 
@@ -278,13 +329,13 @@ class PopupManager {
       
       if (response.success) {
         this.state.excludedUrls = response.urls;
-        this.showMessage(`Added "${response.addedUrl}" to excluded URLs`, "success");
+        
         this.render();
       } else {
-        this.showMessage(response.error || "Failed to add current site", "error");
+        
       }
     } catch (error) {
-      this.showMessage("Failed to add current site", "error");
+      
     }
   }
 
@@ -299,7 +350,7 @@ class PopupManager {
 
       if (response.success) {
         this.state.blurStatus = "ON";
-        this.showMessage("Blur automatically enabled", "success");
+        
       }
     } catch (error) {
       console.error("Failed to enable blur automatically:", error);
@@ -315,7 +366,6 @@ class PopupManager {
       { element: 'toggleBlurSwitch', event: 'change', handler: () => this.toggleBlur() },
       { element: 'toggleBackgroundBlurSwitch', event: 'change', handler: () => this.toggleBackgroundBlur() },
       { element: 'toggleCanvasBlurSwitch', event: 'change', handler: () => this.toggleCanvasBlur() },
-      { element: 'intensitySlider', event: 'input', handler: (e) => this.setBlurIntensity(e.target.value) },
       { element: 'mainTab', event: 'click', handler: () => this.switchTab('main') },
       { element: 'settingsTab', event: 'click', handler: () => this.switchTab('settings') }
     ];
@@ -326,43 +376,33 @@ class PopupManager {
       }
     });
 
+    // Enhanced slider event handling
+    if (this.elements.intensitySlider) {
+      // Handle input event for real-time feedback during drag
+      this.elements.intensitySlider.addEventListener('input', (e) => {
+        this.setBlurIntensity(e.target.value);
+      });
+      
+      // Handle change event for when dragging ends
+      this.elements.intensitySlider.addEventListener('change', (e) => {
+        // Force immediate update when user finishes dragging
+        this.forceSliderUpdate(e.target.value);
+      });
+      
+      // Handle focus events to ensure slider stays responsive
+      this.elements.intensitySlider.addEventListener('focus', () => {
+        this.elements.intensitySlider.setAttribute('data-focused', 'true');
+      });
+      
+      this.elements.intensitySlider.addEventListener('blur', () => {
+        this.elements.intensitySlider.removeAttribute('data-focused');
+      });
+    }
+
     // Delegation for remove buttons
     document.addEventListener("click", (e) => {
       if (e.target.classList.contains("removeExcludedUrlBtn")) {
         this.removeUrl(e.target.dataset.url);
-      }
-    });
-  }
-
-  setupMessageListener() {
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      if (request.tabId !== this.state.currentTabId) return;
-
-      const handlers = {
-        blurStateChanged: () => {
-          this.state.blurStatus = request.newStatus;
-          this.render();
-        },
-        siteRemovedFromExclusion: () => {
-          this.state.excludedUrls = this.state.excludedUrls.filter(url => url !== request.removedUrl);
-          this.state.blurStatus = "ON";
-          this.state.backgroundBlurStatus = request.backgroundBlurStatus;
-          this.showMessage(`Removed "${request.removedUrl}" from excluded URLs and enabled blur`, "success");
-          this.render();
-        },
-        loadSettings: () => {
-          this.state.excludedUrls = request.excludedUrls;
-          this.state.backgroundBlurStatus = request.backgroundBlurStatus;
-          this.state.canvasBlurStatus = request.canvasBlurStatus;
-          this.state.blurIntensity = request.blurIntensity;
-          this.render();
-        }
-      };
-
-      const handler = handlers[request.action];
-      if (handler) {
-        handler();
-        sendResponse({ success: true });
       }
     });
   }
@@ -465,9 +505,17 @@ class PopupManager {
   renderBlurIntensity() {
     const isExcluded = this.isCurrentSiteExcluded();
     
+    // Update UI elements
     this.elements.intensityValue.textContent = `${this.state.blurIntensity}px`;
     this.elements.previewText.style.filter = `blur(${this.state.blurIntensity}px)`;
-    this.elements.intensitySlider.value = this.state.blurIntensity;
+    
+    // Only update slider value if not currently being dragged by user
+    if (!this.elements.intensitySlider.getAttribute('data-focused') && 
+        !this.isUpdatingSlider &&
+        this.elements.intensitySlider.value != this.state.blurIntensity) {
+      this.elements.intensitySlider.value = this.state.blurIntensity;
+    }
+    
     this.elements.intensitySlider.disabled = isExcluded;
     
     const intensityContainer = document.querySelector(".blur-intensity-section");
@@ -499,7 +547,7 @@ class PopupManager {
 
   validateActiveTab() {
     if (!this.state.currentTabId) {
-      this.showMessage("No active tab found", "error");
+      
       return false;
     }
     return true;
@@ -523,16 +571,6 @@ class PopupManager {
     });
   }
 
-  showMessage(text, type) {
-    this.elements.message.textContent = text;
-    this.elements.message.className = type === "error" ? "error-message" : "success-message";
-
-    setTimeout(() => {
-      this.elements.message.textContent = "";
-      this.elements.message.className = "";
-    }, 3000);
-  }
-
   // === TAB SWITCHING ===
   switchTab(tabName) {
     // Remove active class from all tabs and content
@@ -553,9 +591,26 @@ class PopupManager {
     div.textContent = text;
     return div.innerHTML;
   }
+
+  // === CLEANUP ===
+  cleanup() {
+    // Clear any pending debounce timers
+    Object.values(this.debounceTimers).forEach(timer => {
+      if (timer) clearTimeout(timer);
+    });
+    this.debounceTimers = {};
+    this.isUpdatingSlider = false;
+  }
 }
 
 // Initialize when DOM is loaded
 document.addEventListener("DOMContentLoaded", () => {
   window.popupManager = new PopupManager();
+});
+
+// Cleanup when popup is closed
+window.addEventListener("beforeunload", () => {
+  if (window.popupManager) {
+    window.popupManager.cleanup();
+  }
 });
