@@ -78,6 +78,23 @@ body {
   margin-top: 20px;
 }
 
+.toggle-nsfw-protection {
+  margin-top: 20px;
+}
+
+.toggle-nsfw-protection .toggle-label {
+  color: #d93025;
+  font-weight: 600;
+}
+
+.toggle-nsfw-protection:has(.toggle-icon:checked) .toggle-label {
+  color: #1a73e8;
+}
+
+.toggle-nsfw-protection .toggle-icon:checked {
+  background-color: #1a73e8;
+}
+
 .section h2 {
   margin: 0 0 8px 0;
   font-size: 14px;

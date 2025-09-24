@@ -7,12 +7,14 @@ const CONFIG = {
     BLUR_INTENSITY: "blurIntensity",
     BACKGROUND_BLUR_STATE: "backgroundBlurState",
     CANVAS_BLUR_STATE: "canvasBlurState",
+    NSFW_PROTECTION_STATE: "nsfwProtectionState",
   },
   DEFAULTS: {
     EXCLUDED_URLS: ["chrome://", "meet.google.com", "localhost"],
     BLUR_INTENSITY: 50,
     BACKGROUND_BLUR_STATE: false,
     CANVAS_BLUR_STATE: true,
+    NSFW_PROTECTION_STATE: false,
   }
 };
 
@@ -57,6 +59,14 @@ class StorageManager {
 
   static async setCanvasBlurStatus(state) {
     return this.set(CONFIG.STORAGE_KEYS.CANVAS_BLUR_STATE, state);
+  }
+
+  static async getNSFWProtectionStatus() {
+    return this.get(CONFIG.STORAGE_KEYS.NSFW_PROTECTION_STATE, CONFIG.DEFAULTS.NSFW_PROTECTION_STATE);
+  }
+
+  static async setNSFWProtectionStatus(state) {
+    return this.set(CONFIG.STORAGE_KEYS.NSFW_PROTECTION_STATE, state);
   }
 }
 
@@ -145,6 +155,28 @@ class ScriptInjector {
     return await this.insertCSS(tabId, [CONFIG.CSS_FILES.BLUR], { frameIds: [frameId] });
   }
 
+  static async injectNSFWAnalyzer(tabId) {
+    const [result] = await this.executeScript(tabId, () => {
+      return window.nsfwAnalyzer ? true : false;
+    }) || [{ result: false }];
+
+    if (!result.result) {
+      try {
+        // Insert the script as a file instead of creating script element
+        const target = { tabId };
+        await chrome.scripting.executeScript({
+          target,
+          files: ['content-analyzer.js']
+        });
+        return true;
+      } catch (error) {
+        console.warn(`Failed to inject NSFW analyzer for tab ${tabId}:`, error);
+        return false;
+      }
+    }
+    return true;
+  }
+
   static async setBlurIntensity(tabId, intensity, frameId = null) {
     const options = frameId ? { frameIds: [frameId] } : { allFrames: true };
     
@@ -221,12 +253,17 @@ class BlurEffectManager {
     const blurIntensity = await StorageManager.getBlurIntensity();
     const backgroundBlurState = await StorageManager.getBackgroundBlurStatus();
     const canvasBlurState = await StorageManager.getCanvasBlurStatus();
+    const nsfwProtectionState = await StorageManager.getNSFWProtectionStatus();
     
     await this.setBadgeText(tabId, CONFIG.BADGE_STATES.ON);
     await ScriptInjector.injectBlurCSS(tabId);
     await ScriptInjector.setBlurIntensity(tabId, blurIntensity);
     await ScriptInjector.setCanvasBlurEnabled(tabId, canvasBlurState);
     await BackgroundBlurManager.setBackgroundBlurEffect(tabId, backgroundBlurState);
+    
+    if (nsfwProtectionState) {
+      await NSFWProtectionManager.setNSFWProtectionEffect(tabId, true);
+    }
   }
 
   static async disableBlurEffect(tabId) {
@@ -328,6 +365,92 @@ class CanvasBlurManager {
   static async toggleCanvasBlurEffect(tabId) {
     const currentState = await StorageManager.getCanvasBlurStatus();
     return await this.setCanvasBlurEffect(tabId, !currentState);
+  }
+}
+
+// === NSFW PROTECTION MANAGER ===
+class NSFWProtectionManager {
+  static logPrefix = '[NSFW Manager]';
+  
+  static log(message, ...args) {
+    console.log(`${this.logPrefix} ${message}`, ...args);
+  }
+
+  static async setNSFWProtectionEffect(tabId, state = true) {
+    try {
+      this.log(`🔄 ${state ? 'Enabling' : 'Disabling'} NSFW protection for tab ${tabId}`);
+      
+      if (state) {
+        this.log('📝 Injecting NSFW analyzer script...');
+        // Inject the NSFW analyzer script
+        const injectionResult = await ScriptInjector.injectNSFWAnalyzer(tabId);
+        
+        if (injectionResult) {
+          this.log('✅ NSFW analyzer script injected successfully');
+        } else {
+          this.log('❌ Failed to inject NSFW analyzer script');
+          return false;
+        }
+        
+        // Enable NSFW detection
+        this.log('🚀 Starting NSFW detection...');
+        await ScriptInjector.executeScript(tabId, () => {
+          console.log('[NSFW Content Script] Initializing NSFW protection...');
+          
+          if (window.nsfwAnalyzer) {
+            window.nsfwAnalyzer.initialize();
+            console.log('[NSFW Content Script] Analyzer initialized');
+            
+            // Start content observer if available
+            if (window.nsfwObserver) {
+              window.nsfwObserver.start();
+              console.log('[NSFW Content Script] Observer started');
+            }
+          } else {
+            console.warn('[NSFW Content Script] NSFW analyzer not found');
+          }
+        });
+        
+        this.log('✅ NSFW protection enabled successfully');
+      } else {
+        this.log('🛑 Stopping NSFW detection...');
+        // Disable NSFW detection
+        await ScriptInjector.executeScript(tabId, () => {
+          console.log('[NSFW Content Script] Disabling NSFW protection...');
+          
+          if (window.nsfwObserver) {
+            window.nsfwObserver.stop();
+            console.log('[NSFW Content Script] Observer stopped');
+          }
+          
+          // Remove NSFW classes from existing content
+          const nsfwElements = document.querySelectorAll('.nsfw-content');
+          console.log(`[NSFW Content Script] Removing NSFW markings from ${nsfwElements.length} elements`);
+          
+          nsfwElements.forEach(element => {
+            element.classList.remove('nsfw-content');
+            delete element.dataset.nsfwConfidence;
+            delete element.dataset.nsfwReason;
+          });
+        });
+        
+        this.log('✅ NSFW protection disabled successfully');
+      }
+
+      await StorageManager.setNSFWProtectionStatus(state);
+      this.log(`💾 NSFW protection state saved: ${state}`);
+      
+      return state;
+    } catch (error) {
+      console.error(`${this.logPrefix} ❌ Failed to set NSFW protection:`, error);
+      return false;
+    }
+  }
+
+  static async toggleNSFWProtectionEffect(tabId) {
+    const currentState = await StorageManager.getNSFWProtectionStatus();
+    this.log(`🔀 Toggling NSFW protection from ${currentState} to ${!currentState} for tab ${tabId}`);
+    return await this.setNSFWProtectionEffect(tabId, !currentState);
   }
 }
 
@@ -452,6 +575,16 @@ class MessageHandler {
         return { success: true, newStatus };
       },
       
+      getNSFWProtectionStatus: async () => ({
+        success: true,
+        nsfwProtectionStatus: await StorageManager.getNSFWProtectionStatus()
+      }),
+      
+      toggleNSFWProtection: async () => {
+        const newStatus = await NSFWProtectionManager.toggleNSFWProtectionEffect(req.tabId);
+        return { success: true, newStatus };
+      },
+      
       enableBlur: async () => {
         if (!req.tabId) {
           return { success: false, error: "No tab ID provided" };
@@ -552,11 +685,12 @@ class EventHandlers {
     await TabManager.handleTabNavigation(tabId, tab.url);
     
     // Send settings to popup
-    const [excludedUrls, blurIntensity, backgroundBlurStatus, canvasBlurStatus] = await Promise.all([
+    const [excludedUrls, blurIntensity, backgroundBlurStatus, canvasBlurStatus, nsfwProtectionStatus] = await Promise.all([
       StorageManager.getExcludedUrls(),
       StorageManager.getBlurIntensity(),
       StorageManager.getBackgroundBlurStatus(),
-      StorageManager.getCanvasBlurStatus()
+      StorageManager.getCanvasBlurStatus(),
+      StorageManager.getNSFWProtectionStatus()
     ]);
 
     await TabManager.sendMessageToPopup({
@@ -566,6 +700,7 @@ class EventHandlers {
       blurIntensity,
       backgroundBlurStatus,
       canvasBlurStatus,
+      nsfwProtectionStatus,
     });
   }
 

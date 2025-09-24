@@ -7,6 +7,7 @@ class PopupManager {
       blurStatus: "OFF",
       backgroundBlurStatus: false,
       canvasBlurStatus: true,
+      nsfwProtectionStatus: false,
       blurIntensity: 50,
       excludedUrls: ["chrome://", "meet.google.com", "localhost"]
     };
@@ -32,8 +33,8 @@ class PopupManager {
   cacheElements() {
     const elementIds = [
       'addUrlBtn', 'newUrlInput', 'toggleCurrentSite', 'toggleBlurSwitch',
-      'toggleBackgroundBlurSwitch', 'toggleCanvasBlurSwitch', 'intensitySlider', 'currentUrl',
-      'currentStatus', 'toggleBlurLabel', 'toggleBackgroundBlurLabel', 'toggleCanvasBlurLabel',
+      'toggleBackgroundBlurSwitch', 'toggleCanvasBlurSwitch', 'toggleNSFWProtectionSwitch', 'intensitySlider', 'currentUrl',
+      'currentStatus', 'toggleBlurLabel', 'toggleBackgroundBlurLabel', 'toggleCanvasBlurLabel', 'toggleNSFWProtectionLabel',
       'excludedList', 'intensityValue', 'previewText', 'mainTab', 'settingsTab',
       'mainTabContent', 'settingsTabContent'
     ];
@@ -49,7 +50,8 @@ class PopupManager {
       this.loadExcludedUrls(),
       this.loadBlurIntensity(),
       this.loadBackgroundBlurState(),
-      this.loadCanvasBlurState()
+      this.loadCanvasBlurState(),
+      this.loadNSFWProtectionState()
     ]);
   }
 
@@ -97,6 +99,13 @@ class PopupManager {
     const response = await this.sendMessage({ action: "getCanvasBlurStatus" });
     if (response.success) {
       this.state.canvasBlurStatus = response.canvasBlurStatus;
+    }
+  }
+
+  async loadNSFWProtectionState() {
+    const response = await this.sendMessage({ action: "getNSFWProtectionStatus" });
+    if (response.success) {
+      this.state.nsfwProtectionStatus = response.nsfwProtectionStatus;
     }
   }
 
@@ -251,6 +260,26 @@ class PopupManager {
     }
   }
 
+  async toggleNSFWProtection() {
+    if (!this.validateActiveTab()) return;
+
+    try {
+      const response = await this.sendMessage({
+        action: "toggleNSFWProtection",
+        tabId: this.state.currentTabId
+      });
+
+      if (response.success) {
+        this.state.nsfwProtectionStatus = response.newStatus;
+        this.render();
+      } else {
+        console.error("Failed to toggle NSFW protection:", response.error);
+      }
+    } catch (error) {
+      console.error("Error toggling NSFW protection:", error);
+    }
+  }
+
   // === URL MANAGEMENT ===
   async addUrl() {
     const url = this.elements.newUrlInput.value.trim();
@@ -366,6 +395,7 @@ class PopupManager {
       { element: 'toggleBlurSwitch', event: 'change', handler: () => this.toggleBlur() },
       { element: 'toggleBackgroundBlurSwitch', event: 'change', handler: () => this.toggleBackgroundBlur() },
       { element: 'toggleCanvasBlurSwitch', event: 'change', handler: () => this.toggleCanvasBlur() },
+      { element: 'toggleNSFWProtectionSwitch', event: 'change', handler: () => this.toggleNSFWProtection() },
       { element: 'mainTab', event: 'click', handler: () => this.switchTab('main') },
       { element: 'settingsTab', event: 'click', handler: () => this.switchTab('settings') }
     ];
@@ -414,6 +444,7 @@ class PopupManager {
     this.renderBlurIntensity();
     this.renderBackgroundBlur();
     this.renderCanvasBlur();
+    this.renderNSFWProtection();
   }
 
   renderCurrentSite() {
@@ -534,6 +565,12 @@ class PopupManager {
     this.elements.toggleCanvasBlurSwitch.checked = this.state.canvasBlurStatus;
     this.elements.toggleCanvasBlurLabel.textContent = 
       `Canvas Blur ${this.state.canvasBlurStatus ? "Enabled" : "Disabled"}`;
+  }
+
+  renderNSFWProtection() {
+    this.elements.toggleNSFWProtectionSwitch.checked = this.state.nsfwProtectionStatus;
+    this.elements.toggleNSFWProtectionLabel.textContent = 
+      `NSFW Protection ${this.state.nsfwProtectionStatus ? "Enabled" : "Disabled"}`;
   }
 
   // === UTILITY METHODS ===

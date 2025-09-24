@@ -43,7 +43,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["blur.css"],
+      "resources": ["blur.css", "content-analyzer.js"],
       "matches": ["<all_urls>"]
     }
   ]

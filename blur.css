@@ -11,6 +11,7 @@ i[style*="url"] {
   filter: blur(var(--blur-intensity)) !important;
 }
 
+/* Standard hover behavior - remove blur on hover */
 img:hover,
 video:hover,
 div[style*="url"]:hover,
@@ -22,10 +23,41 @@ i[style*="url"]:hover,
   transition: filter 0.3s ease !important;
 }
 
+/* NSFW content - maintain blur even on hover for privacy */
+img.nsfw-content:hover,
+video.nsfw-content:hover,
+div.nsfw-content[style*="url"]:hover,
+span.nsfw-content[style*="url"]:hover,
+a.nsfw-content[style*="url"]:hover,
+i.nsfw-content[style*="url"]:hover,
+.canvas-blur-enabled canvas.nsfw-content:hover {
+  filter: blur(var(--blur-intensity)) !important;
+  transition: none !important;
+}
+
+/* Extra strong blur for NSFW content */
+img.nsfw-content,
+video.nsfw-content,
+div.nsfw-content[style*="url"],
+span.nsfw-content[style*="url"],
+a.nsfw-content[style*="url"],
+i.nsfw-content[style*="url"],
+.canvas-blur-enabled canvas.nsfw-content {
+  filter: blur(calc(var(--blur-intensity) * 1.5)) !important;
+}
+
 .has-background-image {
   filter: blur(var(--blur-intensity)) !important;
 }
 
+/* NSFW background images */
+.has-background-image.nsfw-content {
+  filter: blur(calc(var(--blur-intensity) * 1.5)) !important;
+}
+
+.has-background-image.nsfw-content:hover {
+  filter: blur(calc(var(--blur-intensity) * 1.5)) !important;
+}
 
 :root{
   --blur-intensity: 50px;
