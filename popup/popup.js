@@ -24,6 +24,7 @@ class PopupManager {
       this.cacheElements();
       await this.loadInitialData();
       this.setupEventListeners();
+      this.setupMessageListener();
       this.render();
     } catch (error) {
       console.error("Failed to initialize PopupManager:", error);
@@ -435,6 +436,45 @@ class PopupManager {
         this.removeUrl(e.target.dataset.url);
       }
     });
+  }
+
+  // === MESSAGE LISTENER ===
+  setupMessageListener() {
+    // Listen for messages from background script (e.g., when Ctrl+B is pressed)
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      this.handleBackgroundMessage(message);
+      return true; // Keep the message channel open for async responses
+    });
+  }
+
+  async handleBackgroundMessage(message) {
+    try {
+      switch (message.action) {
+        case "blurStateChanged":
+          // Update the blur status when toggled via keyboard shortcut
+          if (message.tabId === this.state.currentTabId) {
+            this.state.blurStatus = message.newStatus;
+            this.renderCurrentSite(); // Refresh the main toggle button and status
+          }
+          break;
+
+        case "siteRemovedFromExclusion":
+          // Update excluded URLs and blur status when site is removed from exclusion
+          if (message.tabId === this.state.currentTabId) {
+            await this.loadExcludedUrls(); // Refresh the excluded URLs list
+            await this.loadCurrentTab(); // Refresh the current tab status
+            this.render(); // Re-render the entire popup
+          }
+          break;
+
+        default:
+          // Handle any other message types if needed
+          console.log("Unhandled message from background:", message);
+          break;
+      }
+    } catch (error) {
+      console.error("Error handling background message:", error);
+    }
   }
 
   // === RENDERING ===
