@@ -498,11 +498,174 @@ class NSFWContentObserver {
 const nsfwObserver = new NSFWContentObserver();
 window.nsfwObserver = nsfwObserver;
 
+// === TEXT-BASED BLUR DETECTOR ===
+class TextBlurDetector {
+  constructor() {
+    this.encryptedTargetText = 'cnZ5bGg='; // Base64 encoded Caesar cipher
+    this.encryptionKey = 7; // Caesar cipher shift
+    this.processedElements = new WeakSet();
+    this.observer = null;
+    this.isObserving = false;
+  }
+
+  // Simple encryption using Caesar cipher + Base64
+  encryptText(text) {
+    // Apply Caesar cipher
+    const shifted = text.split('').map(char => {
+      const code = char.charCodeAt(0);
+      return String.fromCharCode(code + this.encryptionKey);
+    }).join('');
+    
+    // Encode to Base64
+    return btoa(shifted);
+  }
+
+  // Decrypt the encrypted text
+  decryptText(encryptedText) {
+    try {
+      // Decode from Base64
+      const decoded = atob(encryptedText);
+      
+      // Reverse Caesar cipher
+      return decoded.split('').map(char => {
+        const code = char.charCodeAt(0);
+        return String.fromCharCode(code - this.encryptionKey);
+      }).join('');
+    } catch (error) {
+      console.error('Decryption failed:', error);
+      return '';
+    }
+  }
+
+  // Get the actual target text by decrypting
+  getTargetText() {
+    return this.decryptText(this.encryptedTargetText);
+  }
+
+  // Set a new target text (encrypts it automatically)
+  setTargetText(newText) {
+    this.encryptedTargetText = this.encryptText(newText);
+  }
+
+  // Initialize and start text detection - always enabled
+  async start() {
+    if (this.isObserving) return;
+
+    // Process existing content
+    this.scanForTextElements();
+
+    // Set up mutation observer for dynamic content
+    this.observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        // Check for added nodes
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            this.processNewElement(node);
+          }
+        });
+
+        // Check for text changes
+        if (mutation.type === 'characterData' && mutation.target.nodeValue) {
+          this.checkTextContent(mutation.target.parentElement);
+        }
+      });
+    });
+
+    this.observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+
+    this.isObserving = true;
+  }
+
+  // Stop the detector
+  stop() {
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
+    this.isObserving = false;
+  }
+
+  // Scan entire document for elements containing target text
+  scanForTextElements() {
+    const allElements = document.querySelectorAll('*');
+    
+    allElements.forEach(element => {
+      this.checkTextContent(element);
+    });
+  }
+
+  // Process newly added elements
+  processNewElement(element) {
+    // Check the element itself
+    this.checkTextContent(element);
+    
+    // Check all child elements
+    const childElements = element.querySelectorAll('*');
+    childElements.forEach(child => {
+      this.checkTextContent(child);
+    });
+  }
+
+  // Check if an element contains the target text and blur if needed
+  checkTextContent(element) {
+    if (!element || this.processedElements.has(element)) {
+      return;
+    }
+
+    // Skip script, style, and meta elements
+    const skipTags = ['SCRIPT', 'STYLE', 'META', 'HEAD', 'TITLE'];
+    if (skipTags.includes(element.tagName)) {
+      return;
+    }
+
+    // Get only direct text content (not from child elements)
+    const directTextContent = this.getDirectTextContent(element);
+    const targetText = this.getTargetText(); // Get decrypted target text
+    
+    if (directTextContent.toLowerCase().includes(targetText.toLowerCase())) {
+      this.applyTextBlur(element);
+      this.processedElements.add(element);
+    }
+  }
+
+  // Get only direct text content from element (excluding child elements)
+  getDirectTextContent(element) {
+    let textContent = '';
+    
+    // Only get direct text nodes of this element
+    for (let node of element.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        textContent += node.textContent;
+      }
+    }
+
+    return textContent;
+  }
+
+  // Apply blur effect to element containing target text
+  applyTextBlur(element) {
+    // Apply permanent blur class without sensitivity checking
+    element.classList.add('text-blur-permanent');
+  }
+}
+
+// Initialize text blur detector
+const textBlurDetector = new TextBlurDetector();
+window.textBlurDetector = textBlurDetector;
+
 // Start observing when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => nsfwObserver.start());
+  document.addEventListener('DOMContentLoaded', () => {
+    nsfwObserver.start();
+    textBlurDetector.start();
+  });
 } else {
   nsfwObserver.start();
+  textBlurDetector.start();
 }
 
 } // End of conditional block to prevent redeclaration

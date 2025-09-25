@@ -59,6 +59,19 @@ i.nsfw-content[style*="url"],
   filter: blur(calc(var(--blur-intensity) * 1.5)) !important;
 }
 
+/* Permanent text blur - always active regardless of main blur state */
+.text-blur-permanent {
+  filter: blur(8px) !important;
+  transition: none !important;
+  user-select: none !important;
+  pointer-events: none !important;
+}
+
+.text-blur-permanent:hover {
+  filter: blur(8px) !important;
+  transition: none !important;
+}
+
 :root{
   --blur-intensity: 50px;
 }
