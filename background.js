@@ -203,6 +203,10 @@ class BlurEffectManager {
   static async setBadgeText(tabId, text) {
     try {
       await chrome.action.setBadgeText({ tabId, text });
+      await chrome.action.setBadgeBackgroundColor({
+        tabId,
+        color: text === CONFIG.BADGE_STATES.ON ? "#1a73e8" : "#d93025"
+      });
     } catch (error) {
       console.warn(`Failed to set badge text for tab ${tabId}:`, error);
     }
@@ -324,10 +328,14 @@ class BackgroundBlurManager {
           intersectionObserver.observe(element);
         });
         window["__BackgroundBlurEnabled"] = true;
+        window["__bgBlurObserver"] = intersectionObserver;
       }
 
       if (!newState && window["__BackgroundBlurEnabled"]) {
-        intersectionObserver.disconnect();
+        if (window["__bgBlurObserver"]) {
+          window["__bgBlurObserver"].disconnect();
+          window["__bgBlurObserver"] = null;
+        }
         const allElements = document.querySelectorAll("*");
         allElements.forEach((element) => {
           if (element.classList.contains("has-background-image")) {

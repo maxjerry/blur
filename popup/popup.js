@@ -644,7 +644,13 @@ class PopupManager {
 
   async sendMessage(message) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(message, resolve);
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+          return;
+        }
+        resolve(response);
+      });
     });
   }
 

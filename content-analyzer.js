@@ -339,42 +339,24 @@ class NSFWAnalyzer {
     let suspicious = false;
     let reasons = [];
 
-    // Check image dimensions - very large images might be content
-    const area = element.width * element.height;
-    if (area > 300000) { // 300k pixels (e.g., 600x500)
-      suspicious = true;
-      reasons.push('Large image dimensions');
-    }
-
-    // Check image aspect ratio - extreme ratios less likely to be NSFW
-    const aspectRatio = element.width / element.height;
-    if (aspectRatio > 0.3 && aspectRatio < 3.0) {
-      // Normal aspect ratios are more suspicious than extreme ones
-      if (area > 50000) { // Only for reasonably sized images
-        suspicious = true;
-        reasons.push('Typical content aspect ratio');
-      }
-    }
-
-    // Check parent element context for additional clues
+    // Only flag explicit adult-content indicators in parent container
     const parent = element.parentElement;
     if (parent) {
       const parentClass = parent.className?.toLowerCase() || '';
       const parentId = parent.id?.toLowerCase() || '';
-      
-      const suspiciousTerms = ['gallery', 'photo', 'image', 'picture', 'media', 'content'];
-      if (suspiciousTerms.some(term => parentClass.includes(term) || parentId.includes(term))) {
+      const adultTerms = ['xxx', 'adult', 'porn', 'nsfw', 'nude', 'sexy'];
+      if (adultTerms.some(term => parentClass.includes(term) || parentId.includes(term))) {
         suspicious = true;
-        reasons.push('Image container context');
+        reasons.push('Adult content container');
       }
     }
 
-    // Check for data attributes that might indicate content type
+    // Check for data attributes that explicitly signal adult content
     const dataAttrs = Object.keys(element.dataset);
-    const suspiciousDataAttrs = ['content', 'media', 'photo', 'image'];
-    if (dataAttrs.some(attr => suspiciousDataAttrs.includes(attr.toLowerCase()))) {
+    const adultDataAttrs = ['nsfw', 'adult', 'xxx'];
+    if (dataAttrs.some(attr => adultDataAttrs.includes(attr.toLowerCase()))) {
       suspicious = true;
-      reasons.push('Suspicious data attributes');
+      reasons.push('Adult content data attributes');
     }
 
     return { suspicious, reasons };
@@ -499,6 +481,10 @@ const nsfwObserver = new NSFWContentObserver();
 window.nsfwObserver = nsfwObserver;
 
 // === TEXT-BASED BLUR DETECTOR ===
+// Detects and permanently blurs elements containing a specific target keyword.
+// The target text is stored as a Caesar-cipher-encoded Base64 string.
+// To change the target word, call textBlurDetector.setTargetText("newword") from
+// the extension popup or background script, or update encryptedTargetText below.
 class TextBlurDetector {
   constructor() {
     this.encryptedTargetText = 'cnZ5bGg='; // Base64 encoded Caesar cipher
