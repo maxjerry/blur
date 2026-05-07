@@ -458,7 +458,12 @@ class NSFWContentObserver {
   async analyzeAndMarkElement(element) {
     try {
       // Only analyze images for now (can extend to videos)
-      if (element.tagName.toLowerCase() === 'img' && element.complete) {
+      if (element.tagName.toLowerCase() === 'img') {
+        if (!element.complete) {
+          // Image not yet loaded — analyze once it finishes loading
+          element.addEventListener('load', () => this.analyzeAndMarkElement(element), { once: true });
+          return;
+        }
         const analysis = await window.nsfwAnalyzer.analyzeImage(element);
         
         if (analysis.isNSFW) {

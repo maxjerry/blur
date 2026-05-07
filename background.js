@@ -254,10 +254,12 @@ class BlurEffectManager {
   }
 
   static async enableBlurEffect(tabId) {
-    const blurIntensity = await StorageManager.getBlurIntensity();
-    const backgroundBlurState = await StorageManager.getBackgroundBlurStatus();
-    const canvasBlurState = await StorageManager.getCanvasBlurStatus();
-    const nsfwProtectionState = await StorageManager.getNSFWProtectionStatus();
+    const [blurIntensity, backgroundBlurState, canvasBlurState, nsfwProtectionState] = await Promise.all([
+      StorageManager.getBlurIntensity(),
+      StorageManager.getBackgroundBlurStatus(),
+      StorageManager.getCanvasBlurStatus(),
+      StorageManager.getNSFWProtectionStatus()
+    ]);
     
     await this.setBadgeText(tabId, CONFIG.BADGE_STATES.ON);
     await ScriptInjector.injectBlurCSS(tabId);
@@ -327,14 +329,35 @@ class BackgroundBlurManager {
         allElements.forEach((element) => {
           intersectionObserver.observe(element);
         });
+
+        // Watch for newly added elements and register them with the observer
+        const mutationObserver = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+              if (node.nodeType === Node.ELEMENT_NODE) {
+                intersectionObserver.observe(node);
+                node.querySelectorAll("*").forEach((child) => {
+                  intersectionObserver.observe(child);
+                });
+              }
+            });
+          });
+        });
+        mutationObserver.observe(document.body, { childList: true, subtree: true });
+
         window["__BackgroundBlurEnabled"] = true;
         window["__bgBlurObserver"] = intersectionObserver;
+        window["__bgMutationObserver"] = mutationObserver;
       }
 
       if (!newState && window["__BackgroundBlurEnabled"]) {
         if (window["__bgBlurObserver"]) {
           window["__bgBlurObserver"].disconnect();
           window["__bgBlurObserver"] = null;
+        }
+        if (window["__bgMutationObserver"]) {
+          window["__bgMutationObserver"].disconnect();
+          window["__bgMutationObserver"] = null;
         }
         const allElements = document.querySelectorAll("*");
         allElements.forEach((element) => {
@@ -725,11 +748,6 @@ class EventHandlers {
     });
   }
 
-  static async handleTabUpdated(tabId, changeInfo, tab) {
-    if (changeInfo.status === "loading" && URLManager.shouldProcessUrl(tab.url)) {
-      await TabManager.handleTabNavigation(tabId, tab.url);
-    }
-  }
 }
 
 // === EVENT LISTENERS ===
@@ -743,4 +761,3 @@ chrome.runtime.onStartup.addListener(EventHandlers.handleStartup);
 chrome.commands.onCommand.addListener(EventHandlers.handleCommand);
 chrome.webNavigation.onCommitted.addListener(EventHandlers.handleWebNavigation);
 chrome.tabs.onActivated.addListener(EventHandlers.handleTabActivated);
-chrome.tabs.onUpdated.addListener(EventHandlers.handleTabUpdated);
