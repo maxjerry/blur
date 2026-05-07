@@ -403,6 +403,11 @@ class NSFWProtectionManager {
         // Enable NSFW detection
         this.log('🚀 Starting NSFW detection...');
         await ScriptInjector.executeScript(tabId, () => {
+          if (window.__nsfwProtectionEnabled && window.nsfwObserver?.isObserving) {
+            console.log('[NSFW Content Script] Observer already running');
+            return;
+          }
+
           console.log('[NSFW Content Script] Initializing NSFW protection...');
           
           if (window.nsfwAnalyzer) {
@@ -411,9 +416,15 @@ class NSFWProtectionManager {
             
             // Start content observer if available
             if (window.nsfwObserver) {
-              window.nsfwObserver.start();
-              console.log('[NSFW Content Script] Observer started');
+              if (!window.nsfwObserver.isObserving) {
+                window.nsfwObserver.start();
+                console.log('[NSFW Content Script] Observer started');
+              } else {
+                console.log('[NSFW Content Script] Observer already running');
+              }
             }
+
+            window.__nsfwProtectionEnabled = true;
           } else {
             console.warn('[NSFW Content Script] NSFW analyzer not found');
           }
@@ -430,6 +441,8 @@ class NSFWProtectionManager {
             window.nsfwObserver.stop();
             console.log('[NSFW Content Script] Observer stopped');
           }
+
+          window.__nsfwProtectionEnabled = false;
           
           // Remove NSFW classes from existing content
           const nsfwElements = document.querySelectorAll('.nsfw-content');

@@ -646,11 +646,9 @@ window.textBlurDetector = textBlurDetector;
 // Start observing when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    nsfwObserver.start();
     textBlurDetector.start();
   });
 } else {
-  nsfwObserver.start();
   textBlurDetector.start();
 }
 
