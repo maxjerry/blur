@@ -3,7 +3,8 @@ body {
   min-height: 300px;
   margin: 0;
   padding: 16px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color: #333;
   background: #f8f9fa;
@@ -71,6 +72,10 @@ body {
 }
 
 .toggle-background-blur {
+  margin-top: 20px;
+}
+
+.toggle-url-blur {
   margin-top: 20px;
 }
 
@@ -149,10 +154,10 @@ body {
   gap: 8px;
   margin-bottom: 12px;
 }
- .input-group {
+.input-group {
   flex: 1;
   display: flex;
- }
+}
 
 .add-url-input {
   padding: 8px 12px;
@@ -414,6 +419,6 @@ body {
   filter: blur(0px) !important;
 }
 
-.visually-hidden{
+.visually-hidden {
   display: none;
 }

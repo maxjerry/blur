@@ -5,6 +5,7 @@ class PopupManager {
       currentHostname: "",
       currentTabId: null,
       blurStatus: "OFF",
+      urlBlurStatus: true,
       backgroundBlurStatus: false,
       canvasBlurStatus: true,
       nsfwProtectionStatus: false,
@@ -34,8 +35,8 @@ class PopupManager {
   cacheElements() {
     const elementIds = [
       'addUrlBtn', 'newUrlInput', 'toggleCurrentSite', 'toggleBlurSwitch',
-      'toggleBackgroundBlurSwitch', 'toggleCanvasBlurSwitch', 'toggleNSFWProtectionSwitch', 'intensitySlider', 'currentUrl',
-      'currentStatus', 'toggleBlurLabel', 'toggleBackgroundBlurLabel', 'toggleCanvasBlurLabel', 'toggleNSFWProtectionLabel',
+      'toggleUrlBlurSwitch', 'toggleBackgroundBlurSwitch', 'toggleCanvasBlurSwitch', 'toggleNSFWProtectionSwitch', 'intensitySlider', 'currentUrl',
+      'currentStatus', 'toggleBlurLabel', 'toggleUrlBlurLabel', 'toggleBackgroundBlurLabel', 'toggleCanvasBlurLabel', 'toggleNSFWProtectionLabel',
       'excludedList', 'intensityValue', 'previewText', 'mainTab', 'settingsTab',
       'mainTabContent', 'settingsTabContent'
     ];
@@ -50,6 +51,7 @@ class PopupManager {
       this.loadCurrentTab(),
       this.loadExcludedUrls(),
       this.loadBlurIntensity(),
+      this.loadUrlBlurState(),
       this.loadBackgroundBlurState(),
       this.loadCanvasBlurState(),
       this.loadNSFWProtectionState()
@@ -86,6 +88,13 @@ class PopupManager {
     const response = await this.sendMessage({ action: "getBlurIntensity" });
     if (response.success) {
       this.state.blurIntensity = response.intensity;
+    }
+  }
+
+  async loadUrlBlurState() {
+    const response = await this.sendMessage({ action: "getUrlBlurStatus" });
+    if (response.success) {
+      this.state.urlBlurStatus = response.urlBlurStatus;
     }
   }
 
@@ -238,6 +247,24 @@ class PopupManager {
       }
     } catch (error) {
       
+    }
+  }
+
+  async toggleUrlBlur() {
+    if (!this.validateActiveTab()) return;
+
+    try {
+      const response = await this.sendMessage({
+        action: "toggleUrlBlur",
+        tabId: this.state.currentTabId
+      });
+
+      if (response.success) {
+        this.state.urlBlurStatus = response.newStatus;
+        this.render();
+      }
+    } catch (error) {
+      console.error("Error toggling URL blur:", error);
     }
   }
 
@@ -394,6 +421,7 @@ class PopupManager {
       { element: 'newUrlInput', event: 'keypress', handler: (e) => e.key === 'Enter' && this.addUrl() },
       { element: 'toggleCurrentSite', event: 'click', handler: () => this.toggleCurrentSite() },
       { element: 'toggleBlurSwitch', event: 'change', handler: () => this.toggleBlur() },
+      { element: 'toggleUrlBlurSwitch', event: 'change', handler: () => this.toggleUrlBlur() },
       { element: 'toggleBackgroundBlurSwitch', event: 'change', handler: () => this.toggleBackgroundBlur() },
       { element: 'toggleCanvasBlurSwitch', event: 'change', handler: () => this.toggleCanvasBlur() },
       { element: 'toggleNSFWProtectionSwitch', event: 'change', handler: () => this.toggleNSFWProtection() },
@@ -467,6 +495,18 @@ class PopupManager {
           }
           break;
 
+        case "loadSettings":
+          if (message.tabId === this.state.currentTabId) {
+            this.state.excludedUrls = message.excludedUrls || this.state.excludedUrls;
+            this.state.blurIntensity = message.blurIntensity ?? this.state.blurIntensity;
+            this.state.urlBlurStatus = message.urlBlurStatus ?? this.state.urlBlurStatus;
+            this.state.backgroundBlurStatus = message.backgroundBlurStatus ?? this.state.backgroundBlurStatus;
+            this.state.canvasBlurStatus = message.canvasBlurStatus ?? this.state.canvasBlurStatus;
+            this.state.nsfwProtectionStatus = message.nsfwProtectionStatus ?? this.state.nsfwProtectionStatus;
+            this.render();
+          }
+          break;
+
         default:
           // Handle any other message types if needed
           console.log("Unhandled message from background:", message);
@@ -482,6 +522,7 @@ class PopupManager {
     this.renderCurrentSite();
     this.renderExcludedList();
     this.renderBlurIntensity();
+    this.renderUrlBlur();
     this.renderBackgroundBlur();
     this.renderCanvasBlur();
     this.renderNSFWProtection();
@@ -593,6 +634,12 @@ class PopupManager {
     if (intensityContainer) {
       intensityContainer.style.display = isExcluded ? "none" : "block";
     }
+  }
+
+  renderUrlBlur() {
+    this.elements.toggleUrlBlurSwitch.checked = this.state.urlBlurStatus;
+    this.elements.toggleUrlBlurLabel.textContent =
+      `URL Blur ${this.state.urlBlurStatus ? "Enabled" : "Disabled"}`;
   }
 
   renderBackgroundBlur() {

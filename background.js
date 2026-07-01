@@ -5,6 +5,7 @@ const CONFIG = {
   STORAGE_KEYS: {
     EXCLUDED_URLS: "excludedUrls",
     BLUR_INTENSITY: "blurIntensity",
+    URL_BLUR_STATE: "urlBlurState",
     BACKGROUND_BLUR_STATE: "backgroundBlurState",
     CANVAS_BLUR_STATE: "canvasBlurState",
     NSFW_PROTECTION_STATE: "nsfwProtectionState",
@@ -12,6 +13,7 @@ const CONFIG = {
   DEFAULTS: {
     EXCLUDED_URLS: ["chrome://", "meet.google.com", "localhost"],
     BLUR_INTENSITY: 50,
+    URL_BLUR_STATE: true,
     BACKGROUND_BLUR_STATE: false,
     CANVAS_BLUR_STATE: true,
     NSFW_PROTECTION_STATE: false,
@@ -43,6 +45,14 @@ class StorageManager {
 
   static async setBlurIntensity(intensity) {
     return this.set(CONFIG.STORAGE_KEYS.BLUR_INTENSITY, intensity);
+  }
+
+  static async getUrlBlurStatus() {
+    return this.get(CONFIG.STORAGE_KEYS.URL_BLUR_STATE, CONFIG.DEFAULTS.URL_BLUR_STATE);
+  }
+
+  static async setUrlBlurStatus(state) {
+    return this.set(CONFIG.STORAGE_KEYS.URL_BLUR_STATE, state);
   }
 
   static async getBackgroundBlurStatus() {
@@ -196,6 +206,18 @@ class ScriptInjector {
       }
     }, [enabled], options);
   }
+
+  static async setUrlBlurEnabled(tabId, enabled, frameId = null) {
+    const options = frameId ? { frameIds: [frameId] } : { allFrames: true };
+
+    return await this.executeScript(tabId, (isEnabled) => {
+      if (isEnabled) {
+        document.documentElement.classList.add("url-blur-enabled");
+      } else {
+        document.documentElement.classList.remove("url-blur-enabled");
+      }
+    }, [enabled], options);
+  }
 }
 
 // === BLUR EFFECT MANAGER ===
@@ -254,8 +276,9 @@ class BlurEffectManager {
   }
 
   static async enableBlurEffect(tabId) {
-    const [blurIntensity, backgroundBlurState, canvasBlurState, nsfwProtectionState] = await Promise.all([
+    const [blurIntensity, urlBlurState, backgroundBlurState, canvasBlurState, nsfwProtectionState] = await Promise.all([
       StorageManager.getBlurIntensity(),
+      StorageManager.getUrlBlurStatus(),
       StorageManager.getBackgroundBlurStatus(),
       StorageManager.getCanvasBlurStatus(),
       StorageManager.getNSFWProtectionStatus()
@@ -264,6 +287,7 @@ class BlurEffectManager {
     await this.setBadgeText(tabId, CONFIG.BADGE_STATES.ON);
     await ScriptInjector.injectBlurCSS(tabId);
     await ScriptInjector.setBlurIntensity(tabId, blurIntensity);
+    await ScriptInjector.setUrlBlurEnabled(tabId, urlBlurState);
     await ScriptInjector.setCanvasBlurEnabled(tabId, canvasBlurState);
     await BackgroundBlurManager.setBackgroundBlurEffect(tabId, backgroundBlurState);
     
@@ -275,16 +299,40 @@ class BlurEffectManager {
   static async disableBlurEffect(tabId) {
     await this.setBadgeText(tabId, CONFIG.BADGE_STATES.OFF);
     await ScriptInjector.setBlurIntensity(tabId, 0);
+    await ScriptInjector.setUrlBlurEnabled(tabId, false);
     await ScriptInjector.setCanvasBlurEnabled(tabId, false);
   }
 
   static async enableFrameBlurEffect(tabId, frameId) {
-    const blurIntensity = await StorageManager.getBlurIntensity();
-    const canvasBlurEnabled = await StorageManager.getCanvasBlurStatus();
+    const [blurIntensity, urlBlurState, canvasBlurEnabled] = await Promise.all([
+      StorageManager.getBlurIntensity(),
+      StorageManager.getUrlBlurStatus(),
+      StorageManager.getCanvasBlurStatus()
+    ]);
     
     await ScriptInjector.injectFrameCSS(tabId, frameId);
     await ScriptInjector.setBlurIntensity(tabId, blurIntensity, frameId);
+    await ScriptInjector.setUrlBlurEnabled(tabId, urlBlurState, frameId);
     await ScriptInjector.setCanvasBlurEnabled(tabId, canvasBlurEnabled, frameId);
+  }
+}
+
+// === URL BLUR MANAGER ===
+class UrlBlurManager {
+  static async setUrlBlurEffect(tabId, state = true) {
+    if (state) {
+      await ScriptInjector.injectBlurCSS(tabId);
+    }
+
+    await ScriptInjector.setUrlBlurEnabled(tabId, state);
+
+    await StorageManager.setUrlBlurStatus(state);
+    return state;
+  }
+
+  static async toggleUrlBlurEffect(tabId) {
+    const currentState = await StorageManager.getUrlBlurStatus();
+    return await this.setUrlBlurEffect(tabId, !currentState);
   }
 }
 
@@ -603,6 +651,16 @@ class MessageHandler {
         success: true,
         backgroundBlurStatus: await StorageManager.getBackgroundBlurStatus()
       }),
+
+      getUrlBlurStatus: async () => ({
+        success: true,
+        urlBlurStatus: await StorageManager.getUrlBlurStatus()
+      }),
+
+      toggleUrlBlur: async () => {
+        const newStatus = await UrlBlurManager.toggleUrlBlurEffect(req.tabId);
+        return { success: true, newStatus };
+      },
       
       toggleBackgroundBlur: async () => {
         const newStatus = await BackgroundBlurManager.toggleBackgroundBlurEffect(req.tabId);
@@ -729,9 +787,10 @@ class EventHandlers {
     await TabManager.handleTabNavigation(tabId, tab.url);
     
     // Send settings to popup
-    const [excludedUrls, blurIntensity, backgroundBlurStatus, canvasBlurStatus, nsfwProtectionStatus] = await Promise.all([
+    const [excludedUrls, blurIntensity, urlBlurStatus, backgroundBlurStatus, canvasBlurStatus, nsfwProtectionStatus] = await Promise.all([
       StorageManager.getExcludedUrls(),
       StorageManager.getBlurIntensity(),
+      StorageManager.getUrlBlurStatus(),
       StorageManager.getBackgroundBlurStatus(),
       StorageManager.getCanvasBlurStatus(),
       StorageManager.getNSFWProtectionStatus()
@@ -742,6 +801,7 @@ class EventHandlers {
       tabId: tab.id,
       excludedUrls,
       blurIntensity,
+      urlBlurStatus,
       backgroundBlurStatus,
       canvasBlurStatus,
       nsfwProtectionStatus,

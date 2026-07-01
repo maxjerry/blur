@@ -1,24 +1,21 @@
 img,
 video,
-div[style*="url"],
-span[style*="url"],
-a[style*="url"],
-i[style*="url"] {
-  filter: blur(var(--blur-intensity)) !important;
-}
-
-.canvas-blur-enabled canvas {
+.canvas-blur-enabled canvas,
+.url-blur-enabled div[style*="url"],
+.url-blur-enabled span[style*="url"],
+.url-blur-enabled a[style*="url"],
+.url-blur-enabled i[style*="url"] {
   filter: blur(var(--blur-intensity)) !important;
 }
 
 /* Standard hover behavior - remove blur on hover */
 img:hover,
 video:hover,
-div[style*="url"]:hover,
-span[style*="url"]:hover,
-a[style*="url"]:hover,
-i[style*="url"]:hover,
-.canvas-blur-enabled canvas:hover {
+.canvas-blur-enabled canvas:hover,
+.url-blur-enabled div[style*="url"]:hover,
+.url-blur-enabled span[style*="url"]:hover,
+.url-blur-enabled a[style*="url"]:hover,
+.url-blur-enabled i[style*="url"]:hover {
   filter: blur(0px) !important;
   transition: filter 0.3s ease !important;
 }
@@ -31,7 +28,7 @@ span.nsfw-content[style*="url"]:hover,
 a.nsfw-content[style*="url"]:hover,
 i.nsfw-content[style*="url"]:hover,
 .canvas-blur-enabled canvas.nsfw-content:hover {
-  filter: blur(var(--blur-intensity)) !important;
+  filter: blur(calc(var(--blur-intensity) * 1.5)) !important;
   transition: none !important;
 }
 
@@ -72,6 +69,6 @@ i.nsfw-content[style*="url"],
   transition: none !important;
 }
 
-:root{
+:root {
   --blur-intensity: 50px;
 }
